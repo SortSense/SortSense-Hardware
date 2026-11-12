@@ -1,6 +1,6 @@
 /**
  * @file main.cpp
- * @brief Live Video Streaming & Web Dashboard with OV5640 RGB565 -> JPEG Pipeline
+ * @brief SortSense: Clean YUV422 @ 20MHz Streamer
  */
 
 #include <Arduino.h>
@@ -33,19 +33,7 @@ static AsyncWebServer server(80);
 static SemaphoreHandle_t cameraMutex = nullptr;
 static bool g_cameraOnline = false;
 static uint32_t g_frameCount = 0;
-
-/**
- * @brief 32-bit endianness byte swap on RGB565 buffer
- */
-static inline void fix_rgb565_endianness(uint8_t* buf, size_t len) {
-    if (!buf || len < 4) return;
-    uint32_t* p32 = reinterpret_cast<uint32_t*>(buf);
-    size_t count32 = len / 4;
-    for (size_t i = 0; i < count32; i++) {
-        uint32_t w = p32[i];
-        p32[i] = ((w & 0x00FF00FF) << 8) | ((w & 0xFF00FF00) >> 8);
-    }
-}
+static uint16_t g_sensorPid = 0;
 
 class AsyncJpegResponse : public AsyncAbstractResponse {
 private:
@@ -91,68 +79,130 @@ public:
 
 static const char INDEX_HTML[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>SortSense - OV5640 Live Stream</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SortSense - OV5640 Live Feed</title>
   <style>
-    body { background: #0b1329; color: white; text-align: center; font-family: sans-serif; padding: 20px; }
-    .badge { display: inline-block; background: #0284c7; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: bold; margin-bottom: 12px; }
-    .container { background: #1e293b; max-width: 680px; margin: 0 auto; border-radius: 12px; padding: 16px; border: 1px solid #334155; }
-    img { max-width: 640px; width: 100%; border-radius: 8px; border: 2px solid #334155; display: block; margin: 0 auto; }
-    .stats { display: flex; justify-content: space-around; margin-top: 14px; font-size: 14px; color: #38bdf8; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b1329; color: #f1f5f9; text-align: center; padding: 20px 10px; }
+    h1 { color: #38bdf8; font-size: 26px; margin-bottom: 8px; }
+    .badge { display: inline-block; background: #059669; padding: 5px 14px; border-radius: 9999px; font-size: 13px; font-weight: 600; margin-bottom: 16px; }
+    .container { background: #1e293b; max-width: 720px; margin: 0 auto; border-radius: 14px; padding: 18px; box-shadow: 0 10px 30px rgba(0,0,0,0.6); border: 1px solid #334155; }
+    .feed-wrapper { position: relative; background: #000; border-radius: 10px; overflow: hidden; border: 2px solid #475569; min-height: 240px; display: flex; align-items: center; justify-content: center; }
+    img { width: 100%; max-width: 640px; height: auto; display: block; border-radius: 8px; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 16px; text-align: left; }
+    .stat-card { background: #0f172a; padding: 10px 14px; border-radius: 8px; border: 1px solid #334155; }
+    .stat-label { font-size: 11px; text-transform: uppercase; color: #94a3b8; font-weight: 700; letter-spacing: 0.5px; }
+    .stat-val { font-size: 14px; font-weight: 600; color: #38bdf8; margin-top: 2px; }
+    .actions { display: flex; gap: 10px; justify-content: center; margin-top: 16px; }
+    button { background: #0284c7; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: background 0.2s; font-size: 14px; }
+    button:hover { background: #0369a1; }
+    button.secondary { background: #475569; }
+    button.secondary:hover { background: #334155; }
   </style>
 </head>
 <body>
   <h1>SortSense OV5640 Camera Feed</h1>
-  <div class="badge" id="sensorBadge">ESP32-S3 OV5640 Online</div>
+  <div class="badge" id="sensorBadge">ESP32-S3 OV5640 Clean YUV422 v5</div>
 
   <div class="container">
-    <img id="stream" src="/capture" />
+    <div class="feed-wrapper">
+      <img id="liveFeed" src="/capture" alt="Live Stream Loading..." />
+    </div>
+
     <div class="stats">
-      <div>Status: <span style="color: #4ade80;">ONLINE</span></div>
-      <div>Res: VGA (640x480)</div>
-      <div>Frames: <span id="fc">0</span></div>
+      <div class="stat-card">
+        <div class="stat-label">Camera Status</div>
+        <div class="stat-val" id="statStatus" style="color: #4ade80;">ONLINE (Live)</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Resolution</div>
+        <div class="stat-val">VGA (640x480)</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Frames Streamed</div>
+        <div class="stat-val" id="statFrames">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Frame Rate</div>
+        <div class="stat-val" id="statFps">--</div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button onclick="snapshot()">Snapshot</button>
+      <button class="secondary" id="btnStream" onclick="toggleStream()">Pause Feed</button>
     </div>
   </div>
 
   <script>
-    const img = document.getElementById('stream');
+    const img = document.getElementById('liveFeed');
     let frames = 0;
+    let streaming = true;
     let inFlight = false;
 
-    function loadNext() {
-      if (inFlight) return;
+    function loadNextFrame() {
+      if (!streaming || inFlight) return;
       inFlight = true;
+
       const nextImg = new Image();
+      const t0 = performance.now();
+
       nextImg.onload = function() {
         img.src = this.src;
         frames++;
-        document.getElementById('fc').innerText = frames;
+        document.getElementById('statFrames').innerText = frames;
+
+        const now = performance.now();
+        const fps = 1000 / (now - t0);
+        document.getElementById('statFps').innerText = fps.toFixed(1) + ' fps';
+
         inFlight = false;
-        setTimeout(loadNext, 30);
+        setTimeout(loadNextFrame, 30);
       };
+
       nextImg.onerror = function() {
         inFlight = false;
-        setTimeout(loadNext, 200);
+        setTimeout(loadNextFrame, 200);
       };
+
       nextImg.src = '/capture?t=' + Date.now();
     }
-    loadNext();
+
+    function toggleStream() {
+      streaming = !streaming;
+      document.getElementById('btnStream').innerText = streaming ? 'Pause Feed' : 'Resume Feed';
+      if (streaming && !inFlight) {
+        loadNextFrame();
+      }
+    }
+
+    function snapshot() {
+      const w = window.open('');
+      w.document.write('<img src="' + img.src + '" style="max-width:100%;height:auto;"/>');
+    }
+
+    loadNextFrame();
   </script>
 </body>
 </html>
 )rawliteral";
 
 void setup() {
-    Serial.begin(115200);
-    delay(1000);
-    Serial.println("\n--- Starting Web Camera Streamer ---");
+    Serial.begin(460800);
+    delay(500);
+
+    Serial.println("\n\n==================================================");
+    Serial.println("  SORTSENSE: OV5640 CLEAN YUV422 STREAMER         ");
+    Serial.println("==================================================");
 
     if (!psramFound()) {
-        Serial.println("[ERROR] PSRAM required!");
+        Serial.println("[ERROR] PSRAM not found!");
         return;
     }
+    Serial.printf("[PSRAM] Octal PSRAM Online: %u KB Free\n", ESP.getFreePsram() / 1024);
 
     cameraMutex = xSemaphoreCreateMutex();
 
@@ -179,33 +229,61 @@ void setup() {
     config.pin_href     = CAM_PIN_HREF;
     config.pin_pclk     = CAM_PIN_PCLK;
 
+    // 20 MHz master clock: OV5640 native PLL operating frequency
     config.xclk_freq_hz = 20000000;
-    config.pixel_format = PIXFORMAT_RGB565;
-    config.frame_size   = FRAMESIZE_VGA;
+    config.pixel_format = PIXFORMAT_YUV422;
+    config.frame_size   = FRAMESIZE_VGA;     // 640x480
     config.fb_count     = 2;
     config.fb_location  = CAMERA_FB_IN_PSRAM;
     config.grab_mode    = CAMERA_GRAB_LATEST;
 
+    Serial.println("[CAMERA] Initializing OV5640 (VGA 640x480, YUV422 @ 20MHz)...");
     esp_err_t err = esp_camera_init(&config);
     if (err != ESP_OK) {
-        Serial.printf("[ERROR] esp_camera_init failed: 0x%x\n", err);
+        Serial.printf("[ERROR] esp_camera_init failed: 0x%04x\n", err);
         return;
     }
 
     sensor_t* s = esp_camera_sensor_get();
-    if (s) {
-        s->set_whitebal(s, 1);
-        s->set_exposure_ctrl(s, 1);
-        s->set_aec2(s, 0); // attempted manual evaluative metering
-        s->set_gain_ctrl(s, 1);
-        s->set_denoise(s, 2);
+    if (s != nullptr) {
+        g_sensorPid = s->id.PID;
+        Serial.printf(">>> [SUCCESS] OV5640 Online! PID: 0x%04X\n", g_sensorPid);
         s->set_vflip(s, 1);
+        s->set_hmirror(s, 0);
     }
     g_cameraOnline = true;
 
+    // Warm-up flush
+    delay(400);
+    for (int i = 0; i < 4; i++) {
+        camera_fb_t* dummy = esp_camera_fb_get();
+        if (dummy) esp_camera_fb_return(dummy);
+        delay(30);
+    }
+
+    // Benchmark capture
+    camera_fb_t* fb = esp_camera_fb_get();
+    if (fb != nullptr) {
+        uint8_t* jpg = nullptr;
+        size_t jpg_len = 0;
+        unsigned long t0 = millis();
+        bool ok = frame2jpg(fb, 70, &jpg, &jpg_len);
+        unsigned long dt = millis() - t0;
+        esp_camera_fb_return(fb);
+
+        if (ok && jpg != nullptr) {
+            Serial.printf("[BENCHMARK] YUV422 JPEG: %u bytes in %lu ms\n",
+                          static_cast<uint32_t>(jpg_len), dt);
+            free(jpg);
+        }
+    }
+
+    // Wi-Fi SoftAP
+    Serial.println("\n[WIFI] Starting SoftAP 'ESP32-S3-CAM-TEST'...");
     WiFi.mode(WIFI_AP);
     WiFi.softAP("ESP32-S3-CAM-TEST");
-    Serial.printf("[WIFI] SoftAP IP: %s\n", WiFi.softAPIP().toString().c_str());
+    IPAddress IP = WiFi.softAPIP();
+    Serial.printf("[WIFI] Connected! Open http://%s/ in your browser\n", IP.toString().c_str());
 
     server.on("/", HTTP_GET, [](AsyncWebServerRequest* req) {
         req->send(200, "text/html", INDEX_HTML);
@@ -216,38 +294,80 @@ void setup() {
             req->send(503, "text/plain", "Camera offline");
             return;
         }
+
         if (xSemaphoreTake(cameraMutex, pdMS_TO_TICKS(500)) != pdTRUE) {
             req->send(503, "text/plain", "Camera busy");
             return;
         }
+
         camera_fb_t* fb = esp_camera_fb_get();
-        if (!fb) {
+        if (fb == nullptr) {
             xSemaphoreGive(cameraMutex);
-            req->send(503, "text/plain", "Capture failed");
+            req->send(503, "text/plain", "Capture timeout");
             return;
         }
 
-        fix_rgb565_endianness(fb->buf, fb->len);
         uint8_t* jpg_buf = nullptr;
         size_t jpg_len = 0;
-        bool ok = frame2jpg(fb, 80, &jpg_buf, &jpg_len);
+        bool ok = frame2jpg(fb, 70, &jpg_buf, &jpg_len);
         esp_camera_fb_return(fb);
 
-        if (!ok || !jpg_buf) {
+        if (!ok || jpg_buf == nullptr) {
             xSemaphoreGive(cameraMutex);
-            req->send(500, "text/plain", "JPEG failed");
+            req->send(500, "text/plain", "Compression error");
             return;
         }
 
         AsyncJpegResponse* resp = new AsyncJpegResponse(jpg_buf, jpg_len, cameraMutex);
-        resp->addHeader("Cache-Control", "no-cache");
+        resp->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+        resp->addHeader("Access-Control-Allow-Origin", "*");
         req->send(resp);
     });
 
     server.begin();
-    Serial.println("[HTTP] Server ready on http://192.168.4.1/");
+    Serial.println("[SYSTEM] Ready! Check live stream at http://192.168.4.1/");
+    Serial.println("[SYSTEM] Send 'c' over Serial at 460800 baud to grab photo anytime!\n");
 }
 
 void loop() {
-    delay(50);
+    if (Serial.available()) {
+        char c = Serial.read();
+        if (c == 'c' || c == 's') {
+            if (xSemaphoreTake(cameraMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+                camera_fb_t* fb = esp_camera_fb_get();
+                if (fb != nullptr) {
+                    uint8_t* jpg_buf = nullptr;
+                    size_t jpg_len = 0;
+                    bool ok = frame2jpg(fb, 75, &jpg_buf, &jpg_len);
+                    esp_camera_fb_return(fb);
+
+                    if (ok && jpg_buf != nullptr) {
+                        Serial.println("---BEGIN_PHOTO---");
+                        static const char b64_chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+                        for (size_t i = 0; i < jpg_len; i += 3) {
+                            uint32_t a = (i < jpg_len) ? jpg_buf[i] : 0;
+                            uint32_t b = (i + 1 < jpg_len) ? jpg_buf[i + 1] : 0;
+                            uint32_t c_byte = (i + 2 < jpg_len) ? jpg_buf[i + 2] : 0;
+                            uint32_t triple = (a << 16) + (b << 8) + c_byte;
+                            Serial.print(b64_chars[(triple >> 18) & 0x3F]);
+                            Serial.print(b64_chars[(triple >> 12) & 0x3F]);
+                            Serial.print((i + 1 < jpg_len) ? b64_chars[(triple >> 6) & 0x3F] : '=');
+                            Serial.print((i + 2 < jpg_len) ? b64_chars[triple & 0x3F] : '=');
+                            if ((i / 3) % 18 == 17) Serial.println();
+                        }
+                        Serial.println("\n---END_PHOTO---");
+                        free(jpg_buf);
+                    } else {
+                        Serial.println("[ERROR] frame2jpg failed!");
+                    }
+                } else {
+                    Serial.println("[ERROR] esp_camera_fb_get failed!");
+                }
+                xSemaphoreGive(cameraMutex);
+            } else {
+                Serial.println("[ERROR] Camera mutex busy!");
+            }
+        }
+    }
+    delay(20);
 }
