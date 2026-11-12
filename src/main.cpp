@@ -104,13 +104,28 @@ static const char INDEX_HTML[] PROGMEM = R"rawliteral(
   </div>
 
   <script>
+    const img = document.getElementById('stream');
     let frames = 0;
-    function refresh() {
-      document.getElementById('stream').src = '/capture?t=' + Date.now();
-      frames++;
-      document.getElementById('fc').innerText = frames;
+    let inFlight = false;
+
+    function loadNext() {
+      if (inFlight) return;
+      inFlight = true;
+      const nextImg = new Image();
+      nextImg.onload = function() {
+        img.src = this.src;
+        frames++;
+        document.getElementById('fc').innerText = frames;
+        inFlight = false;
+        setTimeout(loadNext, 30);
+      };
+      nextImg.onerror = function() {
+        inFlight = false;
+        setTimeout(loadNext, 200);
+      };
+      nextImg.src = '/capture?t=' + Date.now();
     }
-    setInterval(refresh, 250);
+    loadNext();
   </script>
 </body>
 </html>
