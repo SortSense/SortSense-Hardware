@@ -20,50 +20,22 @@
 
 /// Power down line (-1 indicates tied permanently to GND on board)
 constexpr int8_t CAM_PIN_PWDN        = -1;
-
-/// Hardware reset line (-1 indicates tied permanently to 3.3V on board)
 constexpr int8_t CAM_PIN_RESET       = -1;
+constexpr int8_t CAM_PIN_XCLK        = 15;
+constexpr int8_t CAM_PIN_SIOD        = 4;
+constexpr int8_t CAM_PIN_SIOC        = 5;
 
-/// Master clock output (XCLK) to OV5640
-constexpr int8_t CAM_PIN_XCLK        = 10;
+constexpr int8_t CAM_PIN_Y9          = 16;
+constexpr int8_t CAM_PIN_Y8          = 17;
+constexpr int8_t CAM_PIN_Y7          = 18;
+constexpr int8_t CAM_PIN_Y6          = 12;
+constexpr int8_t CAM_PIN_Y5          = 10;
+constexpr int8_t CAM_PIN_Y4          = 8;
+constexpr int8_t CAM_PIN_Y3          = 9;
+constexpr int8_t CAM_PIN_Y2          = 11;
 
-/// SCCB / I2C Data line (SIOD)
-constexpr int8_t CAM_PIN_SIOD        = 40;
-
-/// SCCB / I2C Clock line (SIOC)
-constexpr int8_t CAM_PIN_SIOC        = 39;
-
-/// DVP Data bit 7 (D7 / Y9)
-constexpr int8_t CAM_PIN_Y9          = 48;
-
-/// DVP Data bit 6 (D6 / Y8)
-constexpr int8_t CAM_PIN_Y8          = 11;
-
-/// DVP Data bit 5 (D5 / Y7)
-constexpr int8_t CAM_PIN_Y7          = 12;
-
-/// DVP Data bit 4 (D4 / Y6)
-constexpr int8_t CAM_PIN_Y6          = 14;
-
-/// DVP Data bit 3 (D3 / Y5)
-constexpr int8_t CAM_PIN_Y5          = 16;
-
-/// DVP Data bit 2 (D2 / Y4)
-constexpr int8_t CAM_PIN_Y4          = 18;
-
-/// DVP Data bit 1 (D1 / Y3)
-constexpr int8_t CAM_PIN_Y3          = 17;
-
-/// DVP Data bit 0 (D0 / Y2)
-constexpr int8_t CAM_PIN_Y2          = 15;
-
-/// Vertical synchronization (VSYNC) from camera
-constexpr int8_t CAM_PIN_VSYNC       = 38;
-
-/// Horizontal reference (HREF) from camera
-constexpr int8_t CAM_PIN_HREF        = 47;
-
-/// Pixel clock (PCLK) from camera
+constexpr int8_t CAM_PIN_VSYNC       = 6;
+constexpr int8_t CAM_PIN_HREF        = 7;
 constexpr int8_t CAM_PIN_PCLK        = 13;
 
 // =============================================================================
