@@ -34,6 +34,19 @@ static SemaphoreHandle_t cameraMutex = nullptr;
 static bool g_cameraOnline = false;
 static uint32_t g_frameCount = 0;
 
+/**
+ * @brief 32-bit endianness byte swap on RGB565 buffer
+ */
+static inline void fix_rgb565_endianness(uint8_t* buf, size_t len) {
+    if (!buf || len < 4) return;
+    uint32_t* p32 = reinterpret_cast<uint32_t*>(buf);
+    size_t count32 = len / 4;
+    for (size_t i = 0; i < count32; i++) {
+        uint32_t w = p32[i];
+        p32[i] = ((w & 0x00FF00FF) << 8) | ((w & 0xFF00FF00) >> 8);
+    }
+}
+
 class AsyncJpegResponse : public AsyncAbstractResponse {
 private:
     uint8_t* _buf;
@@ -166,10 +179,9 @@ void setup() {
     config.pin_href     = CAM_PIN_HREF;
     config.pin_pclk     = CAM_PIN_PCLK;
 
-    config.xclk_freq_hz = 12000000;
-    config.pixel_format = PIXFORMAT_JPEG;
+    config.xclk_freq_hz = 20000000;
+    config.pixel_format = PIXFORMAT_RGB565;
     config.frame_size   = FRAMESIZE_VGA;
-    config.jpeg_quality = 12;
     config.fb_count     = 2;
     config.fb_location  = CAMERA_FB_IN_PSRAM;
     config.grab_mode    = CAMERA_GRAB_LATEST;
@@ -215,6 +227,7 @@ void setup() {
             return;
         }
 
+        fix_rgb565_endianness(fb->buf, fb->len);
         uint8_t* jpg_buf = nullptr;
         size_t jpg_len = 0;
         bool ok = frame2jpg(fb, 80, &jpg_buf, &jpg_len);
