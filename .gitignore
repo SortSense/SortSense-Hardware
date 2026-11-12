@@ -1,0 +1,8 @@
+.pio
+.vscode/
+.agents
+.github/skills
+.backup_sortsense_firmware
+*.sortsense
+compile_commands.json
+teamwork
