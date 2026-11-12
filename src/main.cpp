@@ -182,6 +182,11 @@ void setup() {
 
     sensor_t* s = esp_camera_sensor_get();
     if (s) {
+        s->set_whitebal(s, 1);
+        s->set_exposure_ctrl(s, 1);
+        s->set_aec2(s, 0); // attempted manual evaluative metering
+        s->set_gain_ctrl(s, 1);
+        s->set_denoise(s, 2);
         s->set_vflip(s, 1);
     }
     g_cameraOnline = true;
