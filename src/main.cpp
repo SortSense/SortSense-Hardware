@@ -166,9 +166,10 @@ void setup() {
     config.pin_href     = CAM_PIN_HREF;
     config.pin_pclk     = CAM_PIN_PCLK;
 
-    config.xclk_freq_hz = 20000000;
-    config.pixel_format = PIXFORMAT_RGB565;
+    config.xclk_freq_hz = 12000000;
+    config.pixel_format = PIXFORMAT_JPEG;
     config.frame_size   = FRAMESIZE_VGA;
+    config.jpeg_quality = 12;
     config.fb_count     = 2;
     config.fb_location  = CAMERA_FB_IN_PSRAM;
     config.grab_mode    = CAMERA_GRAB_LATEST;
