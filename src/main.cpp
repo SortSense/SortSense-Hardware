@@ -83,18 +83,32 @@ static const char INDEX_HTML[] PROGMEM = R"rawliteral(
   <meta charset="utf-8">
   <title>SortSense - OV5640 Live Stream</title>
   <style>
-    body { background: #0b1329; color: white; text-align: center; font-family: sans-serif; }
-    img { max-width: 640px; width: 100%; border-radius: 8px; border: 2px solid #334155; }
+    body { background: #0b1329; color: white; text-align: center; font-family: sans-serif; padding: 20px; }
+    .badge { display: inline-block; background: #0284c7; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: bold; margin-bottom: 12px; }
+    .container { background: #1e293b; max-width: 680px; margin: 0 auto; border-radius: 12px; padding: 16px; border: 1px solid #334155; }
+    img { max-width: 640px; width: 100%; border-radius: 8px; border: 2px solid #334155; display: block; margin: 0 auto; }
+    .stats { display: flex; justify-content: space-around; margin-top: 14px; font-size: 14px; color: #38bdf8; }
   </style>
 </head>
 <body>
   <h1>SortSense OV5640 Camera Feed</h1>
-  <div id="badge">ESP32-S3 OV5640 Online</div>
-  <br>
-  <img id="stream" src="/capture" />
+  <div class="badge" id="sensorBadge">ESP32-S3 OV5640 Online</div>
+
+  <div class="container">
+    <img id="stream" src="/capture" />
+    <div class="stats">
+      <div>Status: <span style="color: #4ade80;">ONLINE</span></div>
+      <div>Res: VGA (640x480)</div>
+      <div>Frames: <span id="fc">0</span></div>
+    </div>
+  </div>
+
   <script>
+    let frames = 0;
     function refresh() {
       document.getElementById('stream').src = '/capture?t=' + Date.now();
+      frames++;
+      document.getElementById('fc').innerText = frames;
     }
     setInterval(refresh, 250);
   </script>
