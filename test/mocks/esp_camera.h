@@ -21,6 +21,7 @@ typedef enum {
 typedef enum {
   FRAMESIZE_QQVGA,
   FRAMESIZE_QVGA,
+  FRAMESIZE_HVGA,
   FRAMESIZE_VGA,
   FRAMESIZE_SVGA,
   FRAMESIZE_XGA,
@@ -60,6 +61,8 @@ typedef struct {
   struct timeval timestamp;
 } camera_fb_t;
 
+typedef struct sensor_s sensor_t;
+
 typedef struct {
   uint16_t MIDH;
   uint16_t MIDL;
@@ -67,9 +70,13 @@ typedef struct {
   uint8_t VER;
 } sensor_id_t;
 
-typedef struct {
+struct sensor_s {
   sensor_id_t id;
-} sensor_t;
+  int vflip;
+  int hmirror;
+  int (*set_vflip)(sensor_t *sensor, int enable);
+  int (*set_hmirror)(sensor_t *sensor, int enable);
+};
 
 typedef struct {
   int pin_pwdn;
@@ -105,7 +112,21 @@ typedef struct {
 inline camera_config_t mock_captured_config = {};
 inline esp_err_t mock_camera_init_result = ESP_OK;
 inline esp_err_t mock_camera_deinit_result = ESP_OK;
-inline sensor_t mock_sensor = {{0x56, 0x40, 0x5640, 0x01}};
+inline int mock_set_vflip_impl(sensor_t *s, int enable) {
+  if (s != nullptr)
+    s->vflip = enable;
+  return 0;
+}
+inline int mock_set_hmirror_impl(sensor_t *s, int enable) {
+  if (s != nullptr)
+    s->hmirror = enable;
+  return 0;
+}
+inline sensor_t mock_sensor = {{0x56, 0x40, 0x5640, 0x01},
+                               0,
+                               0,
+                               mock_set_vflip_impl,
+                               mock_set_hmirror_impl};
 inline sensor_t *mock_sensor_ptr = &mock_sensor;
 inline camera_fb_t *mock_fb_ptr = nullptr;
 inline camera_fb_t *mock_returned_fb_ptr = nullptr;
@@ -119,7 +140,11 @@ inline void mock_camera_reset() {
   memset(&mock_captured_config, 0, sizeof(mock_captured_config));
   mock_camera_init_result = ESP_OK;
   mock_camera_deinit_result = ESP_OK;
-  mock_sensor = {{0x56, 0x40, 0x5640, 0x01}};
+  mock_sensor = {{0x56, 0x40, 0x5640, 0x01},
+                 0,
+                 0,
+                 mock_set_vflip_impl,
+                 mock_set_hmirror_impl};
   mock_sensor_ptr = &mock_sensor;
   mock_fb_ptr = nullptr;
   mock_returned_fb_ptr = nullptr;
