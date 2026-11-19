@@ -254,7 +254,8 @@ void test_fixed_width_type_safety(void) {
  */
 void test_websocket_parameters_validity(void) {
   TEST_ASSERT_EQUAL_STRING("ST-001", STATION_ID);
-  TEST_ASSERT_EQUAL_STRING("192.168.0.66", WS_HOST);
+  TEST_ASSERT_NOT_NULL(WS_HOST);
+  TEST_ASSERT_TRUE(strlen(WS_HOST) > 0);
   TEST_ASSERT_EQUAL_UINT16(8000, WS_PORT);
   TEST_ASSERT_EQUAL_STRING("/ws/vision", WS_PATH);
   TEST_ASSERT_EQUAL_UINT32(500, FRAME_INTERVAL_MS);

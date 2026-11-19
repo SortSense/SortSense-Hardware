@@ -147,7 +147,7 @@ constexpr const char *TOF_TELEMETRY_PATH = "/api/telemetry/fill-levels";
 /// When testing locally, routes to Edric's LAN server. Set to Vercel HTTPS
 /// domain for cloud demo.
 constexpr const char *KIYO_CLOUD_URL =
-    "http://192.168.0.66:8000/api/telemetry/fill-levels";
+    "http://10.157.89.134:8000/api/telemetry/fill-levels";
 
 // --- 3. 4x LM393 IR Break-Beam Sensor Inputs (Interrupt Capable) ---
 constexpr uint8_t PIN_IR_BEAM_1 = 14; ///< IR Beam Sensor 1 input
@@ -209,7 +209,7 @@ constexpr uint32_t CAMERA_MUTEX_TIMEOUT_MS = 1000;
 constexpr const char *STATION_ID = "ST-001";
 
 /// Local LAN AI Server IP address or hostname
-constexpr const char *WS_HOST = "192.168.0.66";
+constexpr const char *WS_HOST = "10.157.89.134";
 
 /// Local LAN AI Server WebSocket port
 constexpr uint16_t WS_PORT = 8000;
