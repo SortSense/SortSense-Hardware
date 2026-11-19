@@ -167,7 +167,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawliteral(
 )rawliteral";
 
 // =============================================================================
-// AI CLASSIFICATION HOOK & VISUAL STATUS UX (PHASE 2 -> PHASE 3 HANDOFF)
+// AI CLASSIFICATION HOOK & VISUAL STATUS UX
 // =============================================================================
 static volatile int s_lastClassifiedBin = BIN_INDEX_NONE;
 
@@ -371,7 +371,7 @@ void setup(void) {
   delay(1000); // Allow serial connection to stabilize on boot
   Serial.println("\n=== SortSense ESP32-S3 Firmware Initializing ===");
 
-  // 1. Create mutual exclusion semaphore for thread-safe camera access
+  // Mutex lock so both cores don't grab the camera at the same time
   cameraMutex = xSemaphoreCreateMutex();
   if (cameraMutex == nullptr) {
     Serial.println("[FATAL] Failed to create cameraMutex! Halting.");
@@ -380,8 +380,7 @@ void setup(void) {
     }
   }
 
-  // 2. Initialize Camera Driver via modular camera_handler interface (Clean
-  // YUV422)
+  // Fire up the OV5640 camera module
   Serial.println("[Init] Initializing OV5640 Camera Driver...");
   esp_err_t camErr = camera_init();
   if (camErr != ESP_OK) {
@@ -392,10 +391,10 @@ void setup(void) {
     Serial.println("[Init] OV5640 Camera initialized successfully.");
   }
 
-  // 3. Configure HTTP routes on AsyncWebServer instance
+  // Set up local web endpoints for snapshots and status checks
   setupServerRoutes();
 
-  // 4. Configure WiFiManager in non-blocking mode
+  // Connect to known WiFi or spin up the captive portal hotspot
   Serial.println("[Init] Initializing WiFiManager (non-blocking)...");
   wm.setConfigPortalBlocking(false);
   wm.setConfigPortalTimeout(WIFI_PORTAL_TIMEOUT_SEC);
@@ -413,7 +412,7 @@ void setup(void) {
                    "'SortSense-AP'...");
   }
 
-  // 5. Initialize WebSocket vision client & register AI classification callback
+  // Connect WebSocket client to the AI vision backend
   Serial.printf("[Init] Initializing WebSocket client for %s:%u%s...\n",
                 WS_HOST, WS_PORT, WS_PATH);
   esp_err_t netErr = network_init(WS_HOST, WS_PORT, WS_PATH);
@@ -422,17 +421,16 @@ void setup(void) {
   }
   network_register_classification_callback(onClassificationReceived);
 
-  // 6. Initialize LM393 IR break-beam sensor interrupt subsystem (Phase 3B)
+  // Setup IR break-beam sensors on hardware interrupt pins
   ir_init();
 
-  // 7. Initialize 4x VL53L0X Time-of-Flight distance sensor subsystem (Phase
-  // 3C)
+  // Initialize distance sensors for monitoring bin capacity
   tof_init();
 
-  // 8. Initialize Onboard WS2812 RGB LED subsystem (Phase 3A)
+  // Turn on the onboard RGB LED for sorting status feedback
   led_init();
 
-  // 9. Pin FreeRTOS tasks to specific processor cores
+  // Pin background tasks: networking on core 0, hardware sensing on core 1
   BaseType_t netTaskStatus = xTaskCreatePinnedToCore(
       networkTask, "NetworkTask", TASK_STACK_NETWORK, nullptr,
       TASK_PRIORITY_NETWORK, &networkTaskHandle, CORE_0_NETWORK);
@@ -457,7 +455,7 @@ void loop(void) {
   // Service onboard RGB LED animation, breathing, and flash timeouts
   led_loop();
 
-  // 1. Non-blocking frame streaming to AI server over WebSocket (Phase 2)
+  // Stream camera frames to the AI server over WebSocket every 500ms
   static unsigned long lastStreamTime = 0;
   const unsigned long currentMillis = millis();
 
@@ -487,12 +485,11 @@ void loop(void) {
     }
   }
 
-  // 2. Poll for LM393 IR break-beam trash drop events (Phase 3B)
+  // Check if any IR break-beam sensor caught a falling piece of trash
   int droppedBin = -1;
   if (ir_poll_drop_event(&droppedBin)) {
-    // If DEMO_PITCH_SMART_SORT is active and an AI classification exists,
-    // attribute drop to the predicted bin to guarantee 100% sort accuracy on
-    // 1-bin prototype!
+    // Demo shortcut: attribute drop to the predicted bin to show 100% sort
+    // accuracy on 1-bin prototype
     int targetBin = droppedBin;
     if (DEMO_PITCH_SMART_SORT && s_lastClassifiedBin >= 0) {
       targetBin = s_lastClassifiedBin;
@@ -509,7 +506,7 @@ void loop(void) {
     ir_send_verify_drop(targetBin);
   }
 
-  // 3. Periodic VL53L0X Time-of-Flight fill-level telemetry (Phase 3C)
+  // Check bin fill levels and send telemetry up to the dashboard
   static unsigned long lastTofReportTime = 0;
   if (currentMillis - lastTofReportTime >= TOF_REPORT_INTERVAL_MS) {
     lastTofReportTime = currentMillis;
@@ -517,7 +514,8 @@ void loop(void) {
     if (tof_read_all_fill_levels(fillLevels)) {
       tof_send_telemetry(fillLevels);
 
-      // Visual warning: pulse red if any active compartment is >= 90% full
+      // Warning pulse: light up red if any compartment is getting too full (>=
+      // 90%)
       bool anyFull = false;
       for (uint8_t i = 0; i < TOF_SENSOR_COUNT; ++i) {
         if (fillLevels[i] >= 90) {
@@ -529,7 +527,8 @@ void loop(void) {
     }
   }
 
-  // 4. High-speed Serial photo grab & sensor debug listener
+  // Serial debug commands listener ('c'/'s' = capture photo, 't' = check ToF
+  // sensors)
   if (Serial.available()) {
     char c = Serial.read();
     if (c == 'c' || c == 's') {
