@@ -3,7 +3,7 @@
 SortSense - Standalone Local AI Server, Interactive REPL & Telemetry Monitor
 =============================================================================
 Provides:
-  1. WebSocket Vision Endpoint: ws://<HOST>:<PORT>/ws/vision
+  - WebSocket Vision Endpoint: ws://<HOST>:<PORT>/ws/vision
      - Accepts binary JPEG frames from ESP32-S3
      - Saves most recent frame to latest.jpg for live inspection
      - Logs frame size and FPS
@@ -13,12 +13,12 @@ Provides:
          - Bin 2 (Metal)   -> Yellow
          - Bin 3 (General) -> White
          - Bin -1 (None)   -> Soft Cyan Breathing
-  2. Drop Verification HTTP POST Endpoint: http://<HOST>:<PORT>/internal/verify-drop
+  - Drop Verification HTTP POST Endpoint: http://<HOST>:<PORT>/internal/verify-drop
      - Receives {"station_id": "ST-001", "bin_index": 0}
      - Logs real-time trash drop verification from LM393 IR break-beam sensors
-  3. Fill-Levels Telemetry HTTP POST Endpoint: http://<HOST>:<PORT>/api/telemetry/fill-levels
+  - Fill-Levels Telemetry HTTP POST Endpoint: http://<HOST>:<PORT>/api/telemetry/fill-levels
      - Receives compartment fill percentages from 4x VL53L0X ToF laser sensors
-  4. Interactive REPL Terminal:
+  - Interactive REPL Terminal:
      - Allows live control over ESP32 LED by typing 0, 1, 2, 3, none, or auto.
 
 Requirements:
@@ -151,7 +151,7 @@ async def root_handler(request):
 
 async def verify_drop_handler(request):
     """
-    Phase 3B: LM393 IR Break-Beam drop verification receiver.
+    LM393 IR break-beam drop verification receiver.
     Contract: {"station_id": "ST-001", "bin_index": <0-3>}
     """
     try:
@@ -177,7 +177,7 @@ async def verify_drop_handler(request):
 
 async def fill_levels_handler(request):
     """
-    Phase 3C: 4x VL53L0X Time-of-Flight compartment fill telemetry receiver.
+    VL53L0X Time-of-Flight compartment fill telemetry receiver.
     Contract: {"station_id": "ST-001", "fill_levels": {"plastic": 45, ...}}
     """
     try:
@@ -200,7 +200,7 @@ async def fill_levels_handler(request):
 
 async def websocket_vision_handler(request):
     """
-    Phase 2: WebSocket camera stream endpoint.
+    WebSocket camera stream endpoint.
     Receives binary JPEG frames and registers client for live inference dispatches.
     """
     ws = web.WebSocketResponse(max_msg_size=10 * 1024 * 1024)
@@ -386,7 +386,7 @@ def main():
     app = make_app()
 
     print("==================================================================")
-    print("SortSense Local AI Vision Server & Drop Monitor (Phases 2 & 3)")
+    print("SortSense Local AI Vision Server & Drop Monitor")
     print(f"WebSocket Vision Stream: ws://{args.host}:{args.port}/ws/vision")
     print(f"IR Drop Verification:    http://{args.host}:{args.port}/internal/verify-drop")
     print(f"ToF Fill Telemetry:      http://{args.host}:{args.port}/api/telemetry/fill-levels")

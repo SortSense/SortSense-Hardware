@@ -250,7 +250,7 @@ sequenceDiagram
     participant Server as Laptop AI Server
     participant LED as Onboard RGB LED
     participant IR as LM393 IR Sensor
-    participant Cloud as Kiyo's Vercel Cloud
+    participant Cloud as Cloud Dashboard
 
     Judge->>Cam: Places plastic bottle under camera
     Cam->>Server: Streams JPEG frame (WS /ws/vision)
@@ -268,9 +268,9 @@ sequenceDiagram
 2. **Item Presented**: Camera streams frames to the server; type `0` in REPL -> onboard LED turns **Blue** (Plastic).
 3. **Item Dropped**: Drop the bottle through the chute -> IR break-beam triggers:
    - Onboard LED flashes bright white/green confirmation for 600 ms.
-   - Pings `/internal/verify-drop` on Edric's server.
-   - Because `DEMO_PITCH_SMART_SORT = true` is set in [config.h](file:///home/Fabio/project/univ/SortSense/SortSense-Hardware/include/config.h#L160), the drop is automatically attributed to the last AI classification (Bin 0: Plastic), guaranteeing **100% demo sort accuracy**.
-4. **Fill Telemetry**: Every 15 seconds, fill levels are automatically POSTed to Kiyo's Vercel cloud dashboard over HTTPS, moving the live progress bar.
+   - Pings `/internal/verify-drop` on the local AI server.
+   - Because `DEMO_PITCH_SMART_SORT = true` is set in [config.h](file:///home/Fabio/project/univ/SortSense/SortSense-Hardware/include/config.h), the drop is automatically attributed to the last AI classification (Bin 0: Plastic), guaranteeing **100% demo sort accuracy**.
+4. **Fill Telemetry**: Every 15 seconds, fill levels are automatically POSTed to the cloud dashboard over HTTPS, moving the live progress bar.
 
 ---
 

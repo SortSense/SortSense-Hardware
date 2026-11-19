@@ -101,78 +101,77 @@ constexpr int8_t CAM_VFLIP = 1;
 constexpr int8_t CAM_HMIRROR = 0;
 
 // =============================================================================
-// PERIPHERAL PIN ALLOCATION & RESERVATIONS (SORTSENSE SMART SYSTEM)
-// Mathematical verification: Zero overlap with Camera, PSRAM, Flash, or
-// USB/UART
+// PERIPHERAL PIN ALLOCATION & RESERVATIONS
+// Double-checked to make sure none of these overlap with the camera, PSRAM,
+// flash, or USB/serial lines.
 // =============================================================================
 
-// --- 1. Shared I2C Bus for 4x VL53L0X Time-of-Flight Distance Sensors ---
-constexpr uint8_t PIN_I2C_SDA = 47; ///< I2C Data line
-constexpr uint8_t PIN_I2C_SCL =
-    21; ///< I2C Clock line (GPIO 21, freeing GPIO 48 for onboard RGB LED)
-constexpr uint32_t I2C_BUS_FREQ_HZ = 400000; ///< 400 kHz Fast-Mode bus clock
+// --- Shared I2C Bus for Time-of-Flight Distance Sensors ---
+// All 4 distance sensors share this single I2C bus. We moved SCL to GPIO 21
+// so GPIO 48 stays free for our onboard RGB LED.
+constexpr uint8_t PIN_I2C_SDA = 47;          ///< I2C Data line
+constexpr uint8_t PIN_I2C_SCL = 21;          ///< I2C Clock line
+constexpr uint32_t I2C_BUS_FREQ_HZ = 400000; ///< 400 kHz fast mode
 
-// --- 2. 4x VL53L0X Digital Output XSHUT Shutdown Pins ---
-constexpr uint8_t PIN_TOF_XSHUT_1 =
-    1; ///< ToF Sensor 1 XSHUT (Chute 1: Plastic)
-constexpr uint8_t PIN_TOF_XSHUT_2 = 2;  ///< ToF Sensor 2 XSHUT (Chute 2: Paper)
-constexpr uint8_t PIN_TOF_XSHUT_3 = 41; ///< ToF Sensor 3 XSHUT (Chute 3: Metal)
-constexpr uint8_t PIN_TOF_XSHUT_4 =
-    42; ///< ToF Sensor 4 XSHUT (Chute 4: General)
+// --- ToF XSHUT Shutdown Control Pins ---
+// Since every VL53L0X powers up with default address 0x29, we keep them all in
+// reset via XSHUT and bring them up one-by-one to assign unique addresses
+// (0x30..0x33).
+constexpr uint8_t PIN_TOF_XSHUT_1 = 1;  ///< ToF 1 XSHUT (Plastic chute)
+constexpr uint8_t PIN_TOF_XSHUT_2 = 2;  ///< ToF 2 XSHUT (Paper chute)
+constexpr uint8_t PIN_TOF_XSHUT_3 = 41; ///< ToF 3 XSHUT (Metal chute)
+constexpr uint8_t PIN_TOF_XSHUT_4 = 42; ///< ToF 4 XSHUT (General chute)
 
 constexpr uint8_t TOF_SENSOR_COUNT = 4; ///< Total number of ToF sensors
 constexpr uint8_t TOF_I2C_ADDR_BASE =
-    0x30; ///< Base address (assigned 0x30..0x33)
+    0x30; ///< Assigned runtime addresses: 0x30..0x33
 
-/// Distance when compartment is completely empty in mm (0% fill level)
+// Distance calibration: 400mm means bin is empty (0%), 50mm means totally full
+// (100%)
 constexpr uint16_t BIN_EMPTY_MM = 400;
-
-/// Distance when compartment is full in mm (100% fill level)
 constexpr uint16_t BIN_FULL_MM = 50;
 
-/// Periodic fill level telemetry reporting interval (milliseconds)
-/// 15000ms (15s) for responsive live hackathon demo progress bar
+// Send telemetry every 15s so the web dashboard moves nicely during live demos
 constexpr uint32_t TOF_REPORT_INTERVAL_MS = 15000;
-
-/// VL53L0X I2C communication and ranging timeout (milliseconds)
 constexpr uint32_t TOF_TIMEOUT_MS = 500;
+constexpr uint32_t TOF_TIMING_BUDGET_US =
+    33000; ///< 33ms budget for accurate reading
 
-/// VL53L0X measurement timing budget in microseconds (33ms)
-constexpr uint32_t TOF_TIMING_BUDGET_US = 33000;
-
-/// Telemetry HTTP POST endpoint path
 constexpr const char *TOF_TELEMETRY_PATH = "/api/telemetry/fill-levels";
 
-/// Kiyo's Cloud Website (Vercel) Telemetry URL
-/// When testing locally, routes to Edric's LAN server. Set to Vercel HTTPS
-/// domain for cloud demo.
-constexpr const char *KIYO_CLOUD_URL =
+// Cloud website telemetry URL.
+// When testing locally, points to our local test server. Point this to your
+// production cloud URL for deployment.
+constexpr const char *CLOUD_TELEMETRY_URL =
     "http://10.157.89.134:8000/api/telemetry/fill-levels";
 
-// --- 3. 4x LM393 IR Break-Beam Sensor Inputs (Interrupt Capable) ---
+// --- LM393 IR Break-Beam Sensors ---
+// Triggers an interrupt the instant an item falls through a chute.
 constexpr uint8_t PIN_IR_BEAM_1 = 14; ///< IR Beam Sensor 1 input
 constexpr uint8_t PIN_IR_BEAM_2 = 38; ///< IR Beam Sensor 2 input
 constexpr uint8_t PIN_IR_BEAM_3 = 39; ///< IR Beam Sensor 3 input
 constexpr uint8_t PIN_IR_BEAM_4 = 40; ///< IR Beam Sensor 4 input
 
-constexpr uint8_t IR_BEAM_COUNT = 4;     ///< Total number of IR sensors
-constexpr uint32_t IR_DEBOUNCE_MS = 500; ///< 500ms software debounce per bin
-constexpr const char *IR_VERIFY_DROP_PATH =
-    "/internal/verify-drop"; ///< HTTP drop verification endpoint
+constexpr uint8_t IR_BEAM_COUNT = 4;
+constexpr uint32_t IR_DEBOUNCE_MS =
+    500; ///< Ignore bounces when items tumble past
+constexpr const char *IR_VERIFY_DROP_PATH = "/internal/verify-drop";
 
-// --- 4. ESP32-S3 Onboard Addressable RGB LED (WS2812 / NeoPixel) ---
+// --- Onboard Addressable RGB LED (WS2812 / NeoPixel) ---
+// Built right into the DevKit board on GPIO 48, so we get status colors without
+// external wiring.
 #ifdef PIN_RGB_LED
 #undef PIN_RGB_LED
 #endif
-constexpr uint8_t PIN_RGB_LED = 48; ///< ESP32-S3-DevKitC-1 onboard RGB LED GPIO
+constexpr uint8_t PIN_RGB_LED = 48; ///< DevKit onboard RGB LED GPIO
 constexpr uint8_t RGB_LED_BRIGHTNESS =
-    64; ///< Default brightness scaling (0..255)
-constexpr uint8_t PIN_WS2812B_DATA =
-    48; ///< Compatibility alias for onboard WS2812 LED
-constexpr uint16_t WS2812B_NUM_LEDS = 1; ///< 1 onboard RGB LED
+    64; ///< Scaled down so it doesn't blind you
+constexpr uint8_t PIN_WS2812B_DATA = 48; ///< Compatibility alias
+constexpr uint16_t WS2812B_NUM_LEDS = 1;
 
-/// Monday First Pitch Shortcut: Attribute physical drops to last AI classified
-/// bin to demonstrate 100% sort accuracy on 1-bin prototype chute.
+// Pitch demo shortcut: If presenting with a 1-bin prototype chute, count any
+// physical drop as the last AI-predicted category to show 100% sort accuracy to
+// judges!
 constexpr bool DEMO_PITCH_SMART_SORT = true;
 
 // =============================================================================
@@ -205,7 +204,7 @@ constexpr uint32_t WIFI_PORTAL_TIMEOUT_SEC = 180;
 constexpr uint32_t CAMERA_MUTEX_TIMEOUT_MS = 1000;
 
 // =============================================================================
-// WEBSOCKET VISION STREAMING & AI BACKEND (PHASE 2)
+// WEBSOCKET VISION STREAMING & AI BACKEND
 // =============================================================================
 
 /// Station identifier for LAN server and cloud telemetry

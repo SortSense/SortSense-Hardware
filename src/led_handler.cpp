@@ -115,7 +115,7 @@ int8_t led_get_current_bin(void) { return s_currentBinIndex; }
 void led_loop(void) {
   const uint32_t now = static_cast<uint32_t>(millis());
 
-  // 1. Check if temporary confirmation flash has expired
+  // Check if the drop confirmation flash has finished
   if (s_isFlashing) {
     if (now >= s_flashEndTime) {
       s_isFlashing = false;
@@ -124,20 +124,20 @@ void led_loop(void) {
     return;
   }
 
-  // 2. High fill warning alert pulse (Red pulse)
+  // Red pulsing animation when a bin is getting full
   if (s_fullWarning) {
     static uint32_t lastAlertStep = 0;
     if (now - lastAlertStep >= 40) {
       lastAlertStep = now;
-      uint32_t phase = (now / 20) % 50;
-      uint8_t redIntensity =
-          (phase < 25) ? (100 + phase * 6) : (250 - (phase - 25) * 6);
+      uint32_t cycleStep = (now / 20) % 50;
+      uint8_t redIntensity = (cycleStep < 25) ? (100 + cycleStep * 6)
+                                              : (250 - (cycleStep - 25) * 6);
       neopixelWrite(PIN_RGB_LED, scale_val(redIntensity), 0, 0);
     }
     return;
   }
 
-  // 3. Gentle breathing animation when in idle state (-1 / None)
+  // Gentle breathing glow when waiting for trash
   if (s_currentBinIndex == BIN_INDEX_NONE) {
     static uint32_t lastAnimTime = 0;
     if (now - lastAnimTime >= 35) {

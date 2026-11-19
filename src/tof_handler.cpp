@@ -183,7 +183,7 @@ bool tof_send_telemetry(const uint8_t fillLevels[TOF_SENSOR_COUNT]) {
   }
 
   HTTPClient http;
-  bool isHttps = (strncmp(KIYO_CLOUD_URL, "https://", 8) == 0);
+  bool isHttps = (strncmp(CLOUD_TELEMETRY_URL, "https://", 8) == 0);
   bool beginOk = false;
 
   WiFiClientSecure secureClient;
@@ -191,14 +191,14 @@ bool tof_send_telemetry(const uint8_t fillLevels[TOF_SENSOR_COUNT]) {
 
   if (isHttps) {
     secureClient.setInsecure();
-    beginOk = http.begin(secureClient, KIYO_CLOUD_URL);
+    beginOk = http.begin(secureClient, CLOUD_TELEMETRY_URL);
   } else {
-    beginOk = http.begin(plainClient, KIYO_CLOUD_URL);
+    beginOk = http.begin(plainClient, CLOUD_TELEMETRY_URL);
   }
 
   if (!beginOk) {
     Serial.printf("[ToF] Failed to initialize HTTP client for %s\n",
-                  KIYO_CLOUD_URL);
+                  CLOUD_TELEMETRY_URL);
     return false;
   }
 
@@ -223,7 +223,7 @@ bool tof_send_telemetry(const uint8_t fillLevels[TOF_SENSOR_COUNT]) {
         fillLevels[BIN_INDEX_METAL], fillLevels[BIN_INDEX_GENERAL], httpCode);
   } else {
     Serial.printf("[ToF HTTP] Telemetry POST to %s returned HTTP %d\n",
-                  KIYO_CLOUD_URL, httpCode);
+                  CLOUD_TELEMETRY_URL, httpCode);
   }
 
   http.end();

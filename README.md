@@ -17,7 +17,7 @@ The **SortSense Hardware Subsystem** is an edge-computing smart waste classifica
   - **Core 1**: Real-time zero-copy camera DMA acquisition, interrupt-driven drop sensing, and multi-sensor I2C ranging.
 - **Low-Latency Vision Pipeline**: Captures HVGA (480x320) frames from the OV5640 camera, buffered in 8MB Octal PSRAM, streaming binary JPEG frames over WebSocket to a local LAN AI classification server at 20-30 FPS.
 - **Microsecond Drop Confirmation**: 4x LM393 infrared break-beam sensors on hardware `FALLING` interrupts with 500 ms software debounce, verifying physical drops within 5 ms via `POST /internal/verify-drop`.
-- **Laser Time-of-Flight Telemetry**: 4x Pololu VL53L0X laser distance sensors on a shared I2C bus using sequential XSHUT address bootstrapping (`0x30`..`0x33`), periodically transmitting compartment capacities to Kiyo's Vercel Cloud Website over HTTPS.
+- **Laser Time-of-Flight Telemetry**: 4x Pololu VL53L0X laser distance sensors on a shared I2C bus using sequential XSHUT address bootstrapping (`0x30`..`0x33`), periodically transmitting compartment capacities to the cloud website over HTTPS.
 - **Onboard WS2812 Visual UX**: Drives the built-in NeoPixel on GPIO 48 without requiring external soldered LED strips. Visualizes bin classifications (Plastic: Blue, Paper: Green, Metal: Yellow, General: White, Idle: Cyan breathing, Full Alert: Pulsing Red).
 - **Hermetic Unit Test Suite**: 73 host-native Unity unit test cases executable without physical hardware (`pio test -e native`).
 
@@ -34,12 +34,12 @@ flowchart TD
         LED["Onboard WS2812 RGB LED (GPIO 48)"] <-->|RMT NRZ Feedback| UserUX["Visual Status UX"]
     end
 
-    subgraph LAN["Edric's Local LAN AI Server (:8000)"]
+    subgraph LAN["Local LAN AI Server (:8000)"]
         WSEndpoint["WS /ws/vision (YOLOv8 Inferences)"]
         DropEndpoint["POST /internal/verify-drop"]
     end
 
-    subgraph Cloud["Kiyo's Cloud Platform (Vercel)"]
+    subgraph Cloud["Cloud Platform (Vercel)"]
         CloudEndpoint["POST /api/telemetry/fill-levels (HTTPS)"]
         WebDashboard["Public Analytics Dashboard"]
     end
@@ -83,11 +83,11 @@ All active GPIOs are mathematically isolated to eliminate internal silicon colli
 
 ## Endpoints Integration Cheat Sheet
 
-The ESP32-S3 communicates across 3 endpoints:
+The ESP32-S3 communicates across 3 main endpoints:
 
-### 1. Camera Stream (Real-Time Vision)
-- **Target**: Edric's Local LAN AI Server
-- **Protocol & URL**: `WS ws://<EDRIC_LAN_HOST>:8000/ws/vision`
+### Camera Stream (Real-Time Vision)
+- **Target**: Local LAN AI Server
+- **Protocol & URL**: `WS ws://<LAN_HOST>:8000/ws/vision`
 - **Rate**: Every ~500 ms (non-blocking timer while connected)
 - **Sent**: Binary JPEG frame buffer bytes (`fb->buf`, `fb->len`)
 - **Received**:
@@ -99,9 +99,9 @@ The ESP32-S3 communicates across 3 endpoints:
   }
   ```
 
-### 2. IR Drop Confirmation (Trash Dropped)
-- **Target**: Edric's Local LAN AI Server
-- **Method & URL**: `POST http://<EDRIC_LAN_HOST>:8000/internal/verify-drop`
+### IR Drop Confirmation (Trash Dropped)
+- **Target**: Local LAN AI Server
+- **Method & URL**: `POST http://<LAN_HOST>:8000/internal/verify-drop`
 - **Trigger**: Immediately upon LM393 beam break interrupt (`FALLING` edge)
 - **Payload**:
   ```json
@@ -110,11 +110,11 @@ The ESP32-S3 communicates across 3 endpoints:
     "bin_index": 0
   }
   ```
-  *(Edric's server forwards the verified event to Kiyo's Vercel Cloud website).*
+  *(The local server forwards the verified event to the cloud website).*
 
-### 3. Compartment Fill Levels (Capacity Telemetry)
-- **Target**: Kiyo's Cloud Website (Vercel)
-- **Method & URL**: `POST https://<KIYO_VERCEL_DOMAIN>/api/telemetry/fill-levels`
+### Compartment Fill Levels (Capacity Telemetry)
+- **Target**: Cloud Website (Vercel)
+- **Method & URL**: `POST https://<CLOUD_DOMAIN>/api/telemetry/fill-levels`
 - **Protocol**: HTTPS via `WiFiClientSecure` with `client.setInsecure()` (or local HTTP fallback)
 - **Rate**: Every 15 seconds during pitch demos
 - **Payload**:
