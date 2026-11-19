@@ -170,7 +170,7 @@ constexpr uint32_t CAMERA_MUTEX_TIMEOUT_MS = 1000;
 constexpr const char *STATION_ID = "ST-001";
 
 /// Local LAN AI Server IP address or hostname
-constexpr const char *WS_HOST = "192.168.1.100";
+constexpr const char *WS_HOST = "192.168.0.66";
 
 /// Local LAN AI Server WebSocket port
 constexpr uint16_t WS_PORT = 8000;
