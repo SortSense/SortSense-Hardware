@@ -43,7 +43,7 @@ The SortSense firmware is partitioned into a modular, decoupled embedded archite
 - Camera pins: `CAM_PIN_PWDN = -1`, `CAM_PIN_RESET = -1`, `CAM_PIN_XCLK = 15`, `CAM_PIN_SIOD = 4`, `CAM_PIN_SIOC = 5` (`int8_t`)
 - Camera DVP bits: `CAM_PIN_Y9 = 16`, `CAM_PIN_Y8 = 17`, `CAM_PIN_Y7 = 18`, `CAM_PIN_Y6 = 12`, `CAM_PIN_Y5 = 10`, `CAM_PIN_Y4 = 8`, `CAM_PIN_Y3 = 9`, `CAM_PIN_Y2 = 11` (`int8_t`)
 - Camera syncs: `CAM_PIN_VSYNC = 6`, `CAM_PIN_HREF = 7`, `CAM_PIN_PCLK = 13` (`int8_t`)
-- Camera settings: `CAM_XCLK_FREQ_HZ = 20000000` (`uint32_t`), `CAM_FRAME_SIZE = FRAMESIZE_VGA`, `CAM_PIXEL_FORMAT = PIXFORMAT_YUV422`, `CAM_JPEG_QUALITY = 12` (`uint8_t`), `CAM_FB_COUNT = 2` (`uint8_t`), `CAM_FB_LOCATION = CAMERA_FB_IN_PSRAM`, `CAM_GRAB_MODE = CAMERA_GRAB_LATEST`
+- Camera settings: `CAM_XCLK_FREQ_HZ = 20000000` (`uint32_t`), `CAM_FRAME_SIZE = FRAMESIZE_HVGA`, `CAM_PIXEL_FORMAT = PIXFORMAT_YUV422`, `CAM_JPEG_QUALITY = 12` (`uint8_t`), `CAM_FB_COUNT = 2` (`uint8_t`), `CAM_FB_LOCATION = CAMERA_FB_IN_PSRAM`, `CAM_GRAB_MODE = CAMERA_GRAB_LATEST`
 - Reserved I2C bus: `PIN_I2C_SDA = 47`, `PIN_I2C_SCL = 48`, `I2C_BUS_FREQ_HZ = 400000` (`uint8_t`, `uint32_t`)
 - Reserved ToF XSHUT: `PIN_TOF_XSHUT_1 = 1`, `PIN_TOF_XSHUT_2 = 2`, `PIN_TOF_XSHUT_3 = 41`, `PIN_TOF_XSHUT_4 = 42` (`uint8_t`)
 - Reserved IR break-beam: `PIN_IR_BEAM_1 = 14`, `PIN_IR_BEAM_2 = 38`, `PIN_IR_BEAM_3 = 39`, `PIN_IR_BEAM_4 = 40` (`uint8_t`, falling-edge interrupt capable)
