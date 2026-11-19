@@ -268,20 +268,24 @@ void setupServerRoutes(void) {
         statusJson, sizeof(statusJson),
         "{\"status\":\"ok\",\"ip\":\"%s\",\"wifi_connected\":%s,\"ws_"
         "connected\":%s,"
-        "\"camera_initialized\":%s,\"frame_count\":%u,\"free_heap\":%u,\"free_"
-        "psram\":%u,\"uptime_ms\":%lu,"
+        "\"camera_initialized\":%s,\"frame_count\":%lu,\"free_heap\":%lu,"
+        "\"free_"
+        "psram\":%lu,\"uptime_ms\":%lu,"
         "\"fill_levels\":{\"plastic\":%u,\"paper\":%u,\"metal\":%u,\"general\":"
         "%u}}",
         (WiFi.status() == WL_CONNECTED) ? WiFi.localIP().toString().c_str()
                                         : "0.0.0.0",
         (WiFi.status() == WL_CONNECTED) ? "true" : "false",
         network_is_connected() ? "true" : "false",
-        is_camera_initialized() ? "true" : "false", g_frameCount,
-        static_cast<uint32_t>(ESP.getFreeHeap()),
-        static_cast<uint32_t>(ESP.getFreePsram()),
-        static_cast<unsigned long>(millis()), fillLevels[BIN_INDEX_PLASTIC],
-        fillLevels[BIN_INDEX_PAPER], fillLevels[BIN_INDEX_METAL],
-        fillLevels[BIN_INDEX_GENERAL]);
+        is_camera_initialized() ? "true" : "false",
+        static_cast<unsigned long>(g_frameCount),
+        static_cast<unsigned long>(ESP.getFreeHeap()),
+        static_cast<unsigned long>(ESP.getFreePsram()),
+        static_cast<unsigned long>(millis()),
+        static_cast<unsigned int>(fillLevels[BIN_INDEX_PLASTIC]),
+        static_cast<unsigned int>(fillLevels[BIN_INDEX_PAPER]),
+        static_cast<unsigned int>(fillLevels[BIN_INDEX_METAL]),
+        static_cast<unsigned int>(fillLevels[BIN_INDEX_GENERAL]));
     request->send(200, "application/json", statusJson);
   });
 
@@ -445,8 +449,8 @@ void setup(void) {
 
   Serial.println("=== SortSense Initialization Complete ===");
   Serial.printf("[SYSTEM] Send 'c'/'s' = capture snapshot, 't' = check ToF "
-                "fill levels (baud %u).\n",
-                SERIAL_BAUD_RATE);
+                "fill levels (baud %lu).\n",
+                static_cast<unsigned long>(SERIAL_BAUD_RATE));
 }
 
 void loop(void) {

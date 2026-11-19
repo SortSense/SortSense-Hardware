@@ -69,9 +69,13 @@ esp_err_t ir_init(void) {
   attachInterrupt(digitalPinToInterrupt(s_irPins[3]), isr_bin_3, FALLING);
 
   Serial.printf("[IR] Initialized %u LM393 sensors on GPIOs: %u, %u, %u, %u "
-                "(FALLING interrupt, %ums debounce)\n",
-                IR_BEAM_COUNT, s_irPins[0], s_irPins[1], s_irPins[2],
-                s_irPins[3], IR_DEBOUNCE_MS);
+                "(FALLING interrupt, %lums debounce)\n",
+                static_cast<unsigned int>(IR_BEAM_COUNT),
+                static_cast<unsigned int>(s_irPins[0]),
+                static_cast<unsigned int>(s_irPins[1]),
+                static_cast<unsigned int>(s_irPins[2]),
+                static_cast<unsigned int>(s_irPins[3]),
+                static_cast<unsigned long>(IR_DEBOUNCE_MS));
   return ESP_OK;
 }
 

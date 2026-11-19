@@ -161,6 +161,9 @@ constexpr const char *IR_VERIFY_DROP_PATH =
     "/internal/verify-drop"; ///< HTTP drop verification endpoint
 
 // --- 4. ESP32-S3 Onboard Addressable RGB LED (WS2812 / NeoPixel) ---
+#ifdef PIN_RGB_LED
+#undef PIN_RGB_LED
+#endif
 constexpr uint8_t PIN_RGB_LED = 48; ///< ESP32-S3-DevKitC-1 onboard RGB LED GPIO
 constexpr uint8_t RGB_LED_BRIGHTNESS =
     64; ///< Default brightness scaling (0..255)

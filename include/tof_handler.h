@@ -97,4 +97,3 @@ bool tof_send_telemetry(const uint8_t fillLevels[TOF_SENSOR_COUNT]);
 #ifdef __cplusplus
 }
 #endif
-
