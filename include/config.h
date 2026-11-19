@@ -14,6 +14,11 @@
  * completely isolate internal Octal PSRAM lines (GPIO 33..37), internal SPI
  * Flash lines (GPIO 26..32), native USB CDC pins (GPIO 19, 20), UART0 console
  * pins (GPIO 43, 44), and hardware strapping pins.
+ *
+ * For each configurable setting below, documentation covers:
+ * - Available choices and valid ranges
+ * - How to adjust the setting
+ * - Why and when you would change it based on hardware and environment
  */
 
 #pragma once
@@ -25,6 +30,8 @@
 // =============================================================================
 // CAMERA PIN CONFIGURATION (OV5640 / DVP INTERFACE)
 // Standard ESP32-S3 CAM 24-Pin DVP interface pinout.
+// Note: These physical pin lines are hardwired on the ESP32-S3 WROOM CAM
+// module. Do not modify these unless you are using a custom PCB layout.
 // =============================================================================
 
 /// Power down control pin. Tied permanently to ground on the PCB, so set to -1.
@@ -84,45 +91,103 @@ constexpr int8_t CAM_PIN_PCLK = 13;
 // CAMERA ACQUISITION PARAMETERS
 // =============================================================================
 
-/// Master clock frequency driving the OV5640. 20 MHz ensures clean clock
-/// synchronization without jitter.
+/// Master clock frequency driving the OV5640 image sensor PLL.
+/// Choices:
+/// - 20000000 (20 MHz, recommended default): Cleanest clock synchronization.
+/// - 10000000 (10 MHz, low noise): Lower power, helpful if lines have EMI.
+/// - 24000000 (24 MHz, maximum): Highest frame rate, requires clean routing.
+/// How: Change the integer value in Hertz.
+/// Why: 20 MHz provides stable DVP clocking. Drop to 10 MHz if encountering
+/// pixel jitter or horizontal tearing on longer unshielded ribbon cables.
 constexpr uint32_t CAM_XCLK_FREQ_HZ = 20000000;
 
-/// Image frame resolution. HVGA (480x320) provides plenty of optical detail for
-/// object classification while keeping payload size small enough for smooth
-/// streaming over WiFi.
+/// Image frame resolution.
+/// Choices:
+/// - FRAMESIZE_QVGA (320x240): Fastest, compact payloads (~15-25 KB).
+/// - FRAMESIZE_HVGA (480x320, recommended default): Balanced sweet spot (~35
+/// KB).
+/// - FRAMESIZE_VGA (640x480): Higher optical detail (~50-80 KB).
+/// - FRAMESIZE_SVGA (800x600): Maximum detail, slower capture and transfer.
+/// How: Change to any valid framesize_t enum from esp_camera.h.
+/// Why: HVGA delivers crisp item edges for vision AI classification while
+/// keeping WiFi transmission time under 50 ms. Use QVGA if WiFi signal is weak
+/// or server latency is high. Use VGA if classifying tiny markings or barcodes.
 constexpr framesize_t CAM_FRAME_SIZE = FRAMESIZE_HVGA;
 
-/// Raw sensor pixel format. Native YUV422 avoids hardware JPEG compression
-/// artifacts on early silicon revisions. Frames are converted to JPEG
-/// on-the-fly in PSRAM using frame2jpg before network transmission.
+/// Raw sensor pixel format.
+/// Choices:
+/// - PIXFORMAT_YUV422 (recommended default): Software JPEG in PSRAM via
+/// frame2jpg.
+/// - PIXFORMAT_RGB565: Direct 16-bit color matrix for onboard pixel processing.
+/// - PIXFORMAT_GRAYSCALE: 8-bit luminance for basic edge detection algorithms.
+/// How: Change to any valid pixformat_t enum from esp_camera.h.
+/// Why: Native YUV422 bypasses hardware JPEG compression artifacts present on
+/// some OV5640 silicon revisions. Frames are converted cleanly to JPEG in PSRAM
+/// before streaming over WebSocket.
 constexpr pixformat_t CAM_PIXEL_FORMAT = PIXFORMAT_YUV422;
 
-/// JPEG compression quality (0 to 63, where lower numbers yield higher image
-/// quality). A setting of 12 preserves crisp edges for vision models while
-/// maintaining compact network packets.
+/// Software JPEG compression quality factor.
+/// Choices:
+/// - Range 0 to 63, where lower numbers mean higher image quality.
+/// - 8 to 10: Crisp optical quality, larger payloads (~50 KB).
+/// - 12 (recommended default): Sharp contours, balanced payload (~35 KB).
+/// - 16 to 20: Compact payloads (~20 KB), ideal for crowded or slow networks.
+/// How: Assign an integer between 0 and 63.
+/// Why: Setting to 12 preserves the edge and texture clarity needed for
+/// accurate waste classification. Lower to 8 if the AI model needs fine surface
+/// detail; raise to 18 if experiencing WiFi packet drops or stream latency.
 constexpr uint8_t CAM_JPEG_QUALITY = 12;
 
-/// Number of frame buffers. Double buffering (2 buffers) allows the DMA
-/// hardware to capture the next frame in parallel while the current frame is
-/// being processed or transmitted over WebSocket.
+/// Number of DMA frame buffers allocated in PSRAM.
+/// Choices:
+/// - 1: Single buffer. Conserves RAM, but may drop frames during transmission.
+/// - 2 (recommended default): Double buffering. Concurrent capture and send.
+/// - 3: Triple buffering. Smoother queue at the cost of extra PSRAM.
+/// How: Set integer value to 1, 2, or 3.
+/// Why: Double buffering allows the camera DMA controller to acquire the next
+/// frame while the CPU and WiFi stack stream the current frame over WebSocket,
+/// eliminating frame stutter.
 constexpr size_t CAM_FB_COUNT = 2;
 
-/// Location of frame buffers in memory. Allocated inside the 8MB Octal PSRAM to
-/// preserve internal SRAM.
+/// Memory location for camera frame buffers.
+/// Choices:
+/// - CAMERA_FB_IN_PSRAM (recommended default): Allocates inside 8MB Octal
+/// PSRAM.
+/// - CAMERA_FB_IN_DRAM: Allocates inside internal SRAM (limited capacity).
+/// How: Set to CAMERA_FB_IN_PSRAM or CAMERA_FB_IN_DRAM.
+/// Why: 8MB Octal PSRAM provides ample room for multiple HVGA buffers while
+/// keeping internal SRAM completely free for FreeRTOS task stacks and network
+/// buffers.
 constexpr camera_fb_location_t CAM_FB_LOCATION = CAMERA_FB_IN_PSRAM;
 
-/// Frame acquisition strategy. Grabs the most recently completed DMA frame,
-/// skipping stale data so the vision model always inspects what is directly
-/// under the camera right now.
+/// Frame acquisition strategy for DMA buffer retrieval.
+/// Choices:
+/// - CAMERA_GRAB_LATEST (recommended default): Grabs the newest completed
+/// frame.
+/// - CAMERA_GRAB_WHEN_EMPTY: Grabs frames in order, waiting for buffer empty.
+/// How: Set to CAMERA_GRAB_LATEST or CAMERA_GRAB_WHEN_EMPTY.
+/// Why: CAMERA_GRAB_LATEST discards older queued frames so the AI inference
+/// server always inspects what is currently under the chute, preventing stale
+/// classification results.
 constexpr camera_grab_mode_t CAM_GRAB_MODE = CAMERA_GRAB_LATEST;
 
-/// Vertical image flip (1 = flip upside down, 0 = normal). Set to 1 to match
-/// our overhead chute mounting bracket.
+/// Vertical image flip.
+/// Choices:
+/// - 1 (recommended default): Invert frame vertically (upside down).
+/// - 0: Standard sensor orientation.
+/// How: Set to 1 or 0.
+/// Why: In our physical enclosure, the camera module is mounted upside-down
+/// directly above the intake chute. Setting this to 1 ensures images arrive
+/// right-side up to the vision model.
 constexpr int8_t CAM_VFLIP = 1;
 
-/// Horizontal image mirror (1 = mirror horizontally, 0 = normal). Set to 0 for
-/// true perspective.
+/// Horizontal image mirror.
+/// Choices:
+/// - 0 (recommended default): Normal perspective.
+/// - 1: Mirror image horizontally.
+/// How: Set to 0 or 1.
+/// Why: Set to 0 for true optical perspective. Change to 1 only if using a
+/// mirror or reflection optics inside the chute.
 constexpr int8_t CAM_HMIRROR = 0;
 
 // =============================================================================
@@ -132,8 +197,15 @@ constexpr int8_t CAM_HMIRROR = 0;
 // --- Shared I2C Bus for Time-of-Flight Distance Sensors ---
 // All 4 distance sensors share this single two-wire I2C bus.
 // SCL is deliberately mapped to GPIO 21 instead of GPIO 48, keeping GPIO 48
-// completely dedicated to the onboard RGB LED so the RMT driver doesn't corrupt
-// the I2C clock.
+// completely dedicated to the onboard RGB LED so the RMT driver does not
+// corrupt the I2C clock. Choices:
+// - PIN_I2C_SDA: GPIO 47 (default). Any free digital pin.
+// - PIN_I2C_SCL: GPIO 21 (default). Any free digital pin.
+// - I2C_BUS_FREQ_HZ: 400000 (400 kHz Fast-Mode default) or 100000 (100 kHz).
+// How: Change pin definitions or bus frequency integer.
+// Why: 400 kHz Fast-Mode rapidly polls all 4 sensors sequentially. If using
+// long jumper wires (>20 cm) without external pull-ups, drop to 100000 for
+// noise immunity.
 constexpr uint8_t PIN_I2C_SDA =
     47; ///< Shared I2C Data line with external pull-up
 constexpr uint8_t PIN_I2C_SCL = 21; ///< Shared I2C Clock line (GPIO 21)
@@ -142,48 +214,101 @@ constexpr uint32_t I2C_BUS_FREQ_HZ =
 
 // --- Time-of-Flight XSHUT Shutdown Control Pins ---
 // Every VL53L0X sensor powers up with factory default I2C address 0x29.
-// To run multiple sensors on the same bus, each sensor's XSHUT pin connects to
+// To run multiple sensors on the same bus, each sensor XSHUT pin connects to
 // a separate GPIO. During boot, we hold all XSHUT lines LOW to keep them
 // asleep, then wake them up one-by-one and assign unique runtime I2C addresses
 // (0x30 through 0x33).
+// Choices:
+// - Any free GPIOs avoiding PSRAM (33..37), Flash (26..32), USB (19, 20),
+//   UART (43, 44), and Strapping pins (0, 3, 45, 46).
+// How: Reassign pin numbers if adapting to custom PCB routing.
+// Why: Enables 4 independent distance measurements on a single shared I2C bus.
 constexpr uint8_t PIN_TOF_XSHUT_1 = 1;  ///< Chute Plastic: XSHUT control pin
 constexpr uint8_t PIN_TOF_XSHUT_2 = 2;  ///< Chute Paper: XSHUT control pin
 constexpr uint8_t PIN_TOF_XSHUT_3 = 41; ///< Chute Metal: XSHUT control pin
 constexpr uint8_t PIN_TOF_XSHUT_4 = 42; ///< Chute General: XSHUT control pin
 
-constexpr uint8_t TOF_SENSOR_COUNT =
-    4; ///< Total number of compartments monitored
-constexpr uint8_t TOF_I2C_ADDR_BASE =
-    0x30; ///< Base address (sensors get assigned 0x30, 0x31, 0x32, 0x33)
+/// Total number of compartments monitored by Time-of-Flight sensors.
+/// Choices:
+/// - 4 (full multi-stream waste sorter default).
+/// - 1 (single-bin prototype for initial benchtop testing).
+/// How: Change integer count from 1 to 4.
+/// Why: Set to 1 if testing with a single-chute prototype to skip polling
+/// unpopulated sensor slots.
+constexpr uint8_t TOF_SENSOR_COUNT = 4;
+
+/// Base I2C address for sequential sensor addressing.
+/// Choices:
+/// - 0x30 (default, assigns 0x30, 0x31, 0x32, 0x33).
+/// - Any contiguous 4-address block (e.g. 0x40, 0x50) that avoids 0x29.
+/// How: Change hex literal value.
+/// Why: Avoid address collisions if connecting additional I2C peripherals like
+/// displays or environmental sensors.
+constexpr uint8_t TOF_I2C_ADDR_BASE = 0x30;
 
 // --- Time-of-Flight Calibration & Reporting ---
-// Empty distance calibration: 400 mm from the sensor lens to the chute floor
-// indicates 0% fill.
+
+/// Empty distance calibration in millimeters.
+/// Choices:
+/// - 100 mm to 1200 mm depending on physical bin depth.
+/// - 400 mm (default for our benchmark demo container).
+/// How: Measure distance from sensor lens to the empty bottom of your bin in
+/// millimeters, then set this constant to that exact measured value.
+/// Why: Calibrates the baseline 0% fill level. Shorter desktop bins need a
+/// smaller value (e.g. 300 mm); deeper floor-standing bins need a larger value
+/// (e.g. 600 mm).
 constexpr uint16_t BIN_EMPTY_MM = 400;
 
-// Full distance calibration: 50 mm from the sensor lens indicates 100% capacity
-// (time to empty).
+/// Full distance calibration in millimeters.
+/// Choices:
+/// - 30 mm to 200 mm depending on desired safety margin.
+/// - 50 mm (recommended default).
+/// How: Measure the distance from the sensor lens down to the desired maximum
+/// trash pile height in millimeters.
+/// Why: Calibrates the 100% capacity alarm threshold. Must maintain at least
+/// 30-50 mm clearance so waste never physically impacts or soils the sensor
+/// lens.
 constexpr uint16_t BIN_FULL_MM = 50;
 
-// Periodic telemetry transmission interval in milliseconds.
-// 15 seconds (15000 ms) provides responsive live progress bar updates on the
-// web dashboard during presentations.
+/// Periodic fill level telemetry reporting interval in milliseconds.
+/// Choices:
+/// - 5000 to 15000 ms (5-15s, recommended for live demos and judging).
+/// - 60000 to 300000 ms (1-5 min, recommended for production deployment).
+/// How: Change the integer millisecond value.
+/// Why: A short 15-second interval allows audience and judges to see live
+/// progress bars move promptly on the web dashboard. In production, 60+ seconds
+/// conserves battery and reduces cloud server ingest volume.
 constexpr uint32_t TOF_REPORT_INTERVAL_MS = 15000;
 
-// Maximum duration to wait for an I2C distance measurement before timing out.
+/// Maximum duration to wait for an I2C distance measurement before timing out.
+/// Choices:
+/// - 200 to 1000 ms (default 500 ms).
+/// How: Change integer millisecond value.
+/// Why: Prevents bus stalls from blocking the hardware core if a sensor cable
+/// is disconnected or loose.
 constexpr uint32_t TOF_TIMEOUT_MS = 500;
 
-// Time allocated for each distance measurement. 33 ms (33000 us) balances
-// ranging accuracy against bus time.
+/// Measurement timing budget per distance reading in microseconds.
+/// Choices:
+/// - 20000 us (20 ms, fastest, slightly lower accuracy).
+/// - 33000 us (33 ms, recommended default, balanced speed and precision).
+/// - 200000 us (200 ms, highest precision for long distances).
+/// How: Change microsecond integer value.
+/// Why: 33 ms provides millimeter precision up to 1.2 meters without holding
+/// the I2C bus too long during sequential sensor reads.
 constexpr uint32_t TOF_TIMING_BUDGET_US = 33000;
 
-// Path for telemetry HTTP POST requests.
+/// Telemetry HTTP POST endpoint path.
 constexpr const char *TOF_TELEMETRY_PATH = "/api/telemetry/fill-levels";
 
-// Full destination URL for fill-level telemetry.
-// Points to the local testing server during development or the production cloud
-// dashboard when deployed. Both HTTP and HTTPS are supported automatically via
-// WiFiClientSecure with setInsecure().
+/// Destination URL for fill-level telemetry.
+/// Choices:
+/// - Local LAN server: "http://10.157.89.134:8000/api/telemetry/fill-levels"
+/// - Cloud dashboard:
+/// "https://your-cloud-app.vercel.app/api/telemetry/fill-levels" How: Change
+/// string literal to local server IP during development or cloud HTTPS domain
+/// for production. Both HTTP and HTTPS work automatically. Why: Seamlessly
+/// switch between offline benchtop testing and remote cloud monitoring.
 constexpr const char *CLOUD_TELEMETRY_URL =
     "http://10.157.89.134:8000/api/telemetry/fill-levels";
 
@@ -191,6 +316,11 @@ constexpr const char *CLOUD_TELEMETRY_URL =
 // Each chute features an infrared break-beam sensor. The LM393 comparator
 // outputs an active-low signal that pulls to GND (FALLING edge) the moment a
 // falling item interrupts the beam.
+// Choices:
+// - PIN_IR_BEAM_1..4: GPIOs 14, 38, 39, 40 (default). Any interrupt-capable
+// GPIO. How: Reassign pin numbers if using alternate header pins. Why:
+// Interrupt-driven edge detection ensures zero dropped item events even when
+// falling at terminal velocity.
 constexpr uint8_t PIN_IR_BEAM_1 =
     14; ///< Chute Plastic: IR break-beam sensor input
 constexpr uint8_t PIN_IR_BEAM_2 =
@@ -200,31 +330,71 @@ constexpr uint8_t PIN_IR_BEAM_3 =
 constexpr uint8_t PIN_IR_BEAM_4 =
     40; ///< Chute General: IR break-beam sensor input
 
-constexpr uint8_t IR_BEAM_COUNT = 4; ///< Total number of IR sensors monitored
-constexpr uint32_t IR_DEBOUNCE_MS =
-    500; ///< Software debounce window in ms to prevent multiple counts per drop
-constexpr const char *IR_VERIFY_DROP_PATH =
-    "/internal/verify-drop"; ///< Local server drop verification endpoint
+/// Total number of IR sensors monitored.
+constexpr uint8_t IR_BEAM_COUNT = 4;
+
+/// Software debounce lockout time in milliseconds.
+/// Choices:
+/// - 200 to 300 ms: For fast sequential sorting workflows.
+/// - 500 ms (recommended default): Standard debounce for typical items.
+/// - 700 to 1000 ms: For tumbling or bouncing items like crushed cans.
+/// How: Change integer millisecond value.
+/// Why: Prevents multiple false drop counts when an irregular or crumpled item
+/// bounces or flutters through the infrared beam.
+constexpr uint32_t IR_DEBOUNCE_MS = 500;
+
+/// Drop verification endpoint path on the local AI server.
+constexpr const char *IR_VERIFY_DROP_PATH = "/internal/verify-drop";
 
 // --- Onboard Addressable RGB LED (WS2812 / NeoPixel) ---
 // Built directly into the ESP32-S3-DevKitC-1 board on GPIO 48.
-// Driven via the hardware RMT peripheral so we get instant visual
-// classification feedback without extra wiring.
+// Driven via the hardware RMT peripheral for instant visual feedback.
 #ifdef PIN_RGB_LED
 #undef PIN_RGB_LED
 #endif
-constexpr uint8_t PIN_RGB_LED = 48; ///< Onboard WS2812 addressable LED GPIO
-constexpr uint8_t RGB_LED_BRIGHTNESS =
-    64; ///< Brightness scaled to ~25% to protect eyes and conserve power
-constexpr uint8_t PIN_WS2812B_DATA =
-    48; ///< Compatibility alias for LED libraries
-constexpr uint16_t WS2812B_NUM_LEDS =
-    1; ///< Single onboard addressable NeoPixel
+/// Onboard WS2812 addressable LED GPIO data line.
+/// Choices:
+/// - 48 (default onboard LED).
+/// - Any free GPIO if wiring an external NeoPixel strip along chutes.
+/// How: Change pin definition.
+/// Why: Using onboard GPIO 48 provides complete visual sorting feedback
+/// without any external wiring.
+constexpr uint8_t PIN_RGB_LED = 48;
 
-// Single-chute demo shortcut:
-// When demonstrating with a single physical chute prototype, this attributes
-// any physical drop to the most recent AI classification. This guarantees 100%
-// sort accuracy during live demo pitches.
+/// Global brightness scaling factor.
+/// Choices:
+/// - 0 (completely off) to 255 (maximum 100% brightness).
+/// - 32: Subtle indoor lighting, minimal power.
+/// - 64 (recommended default): Clear benchtop visibility, saves power (~25%).
+/// - 128: Brightly lit indoor exhibition hall.
+/// - 255: Outdoor direct sunlight visibility.
+/// How: Assign an integer between 0 and 255.
+/// Why: WS2812 LEDs at full power draw ~60 mA and can be blinding at close
+/// range. Setting to 64 provides distinct colors while protecting eyes and
+/// conserving USB supply power.
+constexpr uint8_t RGB_LED_BRIGHTNESS = 64;
+
+/// Compatibility alias for LED libraries.
+constexpr uint8_t PIN_WS2812B_DATA = 48;
+
+/// Total count of addressable LEDs in chain.
+/// Choices:
+/// - 1 (default onboard NeoPixel).
+/// - N (e.g. 8, 16, 24 for external chute illumination rings or strips).
+/// How: Set integer count matching your physical LED string length.
+/// Why: Scale up to drive external LED rings or light bars surrounding each
+/// waste chute opening.
+constexpr uint16_t WS2812B_NUM_LEDS = 1;
+
+/// Single-chute prototype evaluation shortcut.
+/// Choices:
+/// - true (recommended default for 1-chute prototype presentations): Attributes
+///   any physical drop to the most recent AI classification result.
+/// - false: Strictly attributes drop to the specific physical sensor chute
+/// index. How: Set to true or false. Why: When demonstrating with a 1-chute
+/// prototype, setting this to true guarantees 100% sorting accuracy during live
+/// demo pitches. Set to false when all 4 separate physical chutes and sensors
+/// are assembled.
 constexpr bool DEMO_PITCH_SMART_SORT = true;
 
 // =============================================================================
@@ -232,36 +402,69 @@ constexpr bool DEMO_PITCH_SMART_SORT = true;
 // =============================================================================
 
 /// Asynchronous HTTP Server listening port for web dashboard and diagnostics.
+/// Choices:
+/// - 80 (standard HTTP default).
+/// - 8080 (alternative web port).
+/// How: Change port number.
+/// Why: Port 80 allows accessing the status page directly via IP without typing
+/// a port suffix into browser address bars.
 constexpr uint16_t HTTP_SERVER_PORT = 80;
 
-/// High-speed serial baud rate (460800) for fast photo transfers, log output,
-/// and sensor debug.
+/// High-speed serial baud rate for debug monitoring and diagnostic log output.
+/// Choices:
+/// - 115200 (standard Arduino default).
+/// - 460800 (recommended default high-speed).
+/// - 921600 (ultra-fast for dense diagnostic telemetry).
+/// How: Change integer baud rate (and match monitor_speed in platformio.ini).
+/// Why: 460800 dumps high-frequency camera and sensor logs 4 times faster than
+/// 115200 without blocking task execution.
 constexpr uint32_t SERIAL_BAUD_RATE = 460800;
 
 /// FreeRTOS core assignments for dual-core workload isolation.
-constexpr uint8_t CORE_0_NETWORK =
-    0; ///< Core 0: Wi-Fi stack, HTTP server, and WebSocket client
-constexpr uint8_t CORE_1_HARDWARE =
-    1; ///< Core 1: Camera DMA capture, IR interrupts, and I2C ranging
+/// Choices:
+/// - Core 0: Dedicated to network stack, WiFi, HTTP server, WebSocket client.
+/// - Core 1: Dedicated to camera capture DMA, IR interrupts, I2C sensor reads.
+/// How: Keep Core 0 and Core 1 split as defined.
+/// Why: Isolating network I/O from hardware sensing guarantees that WiFi TCP/IP
+/// processing latency never delays microsecond-critical camera DMA capture or
+/// IR drop interrupts.
+constexpr uint8_t CORE_0_NETWORK = 0;
+constexpr uint8_t CORE_1_HARDWARE = 1;
 
-/// FreeRTOS task stack allocations in bytes. 8192 bytes guarantees ample
-/// headroom during JSON parsing.
+/// FreeRTOS task stack allocations in bytes.
+/// Choices:
+/// - 4096 to 16384 bytes (default 8192 bytes).
+/// How: Change stack size in bytes.
+/// Why: 8192 bytes guarantees ample headroom during JSON parsing and WebSocket
+/// payload framing, preventing task stack overflows.
 constexpr uint32_t TASK_STACK_NETWORK = 8192;
 constexpr uint32_t TASK_STACK_HARDWARE = 8192;
 
-/// FreeRTOS task priorities. Hardware sensing runs at higher priority to
-/// guarantee real-time response.
+/// FreeRTOS task scheduling priorities.
+/// Choices:
+/// - Hardware priority higher than Network priority (default 2 vs 1).
+/// How: Adjust integer priority levels.
+/// Why: Real-time sensor interrupts and camera DMA must take precedence over
+/// background network telemetry dispatch.
 constexpr uint8_t TASK_PRIORITY_NETWORK = 1;
 constexpr uint8_t TASK_PRIORITY_HARDWARE = 2;
 
 /// Dynamic captive portal access point SSID and timeout.
-/// If saved Wi-Fi credentials are not found within 180 seconds, the device
-/// boots this AP for configuration.
+/// Choices:
+/// - WIFI_AP_NAME: Any valid SSID string (default "SortSense-AP").
+/// - WIFI_PORTAL_TIMEOUT_SEC: 60 to 300 seconds (default 180 seconds / 3 min).
+/// How: Change SSID string or timeout in seconds.
+/// Why: If saved WiFi credentials fail, the device broadcasts SortSense-AP for
+/// 3 minutes so users can reconfigure WiFi before retrying saved credentials.
 constexpr const char *WIFI_AP_NAME = "SortSense-AP";
 constexpr uint32_t WIFI_PORTAL_TIMEOUT_SEC = 180;
 
 /// Timeout in milliseconds when waiting to acquire the camera mutex between
 /// cores.
+/// Choices:
+/// - 500 to 2000 ms (default 1000 ms).
+/// How: Change integer millisecond value.
+/// Why: Prevents inter-core deadlocks if one core encounters a slow DMA cycle.
 constexpr uint32_t CAMERA_MUTEX_TIMEOUT_MS = 1000;
 
 // =============================================================================
@@ -270,27 +473,59 @@ constexpr uint32_t CAMERA_MUTEX_TIMEOUT_MS = 1000;
 
 /// Unique station identifier included in all telemetry payloads and drop
 /// events.
+/// Choices:
+/// - Any alphanumeric station tag (e.g. "ST-001", "ST-002").
+/// How: Change string literal.
+/// Why: Distinguishes multiple waste sorting units deployed in the same
+/// facility on the cloud dashboard.
 constexpr const char *STATION_ID = "ST-001";
 
 /// IP address or hostname of the local AI classification server.
+/// Choices:
+/// - Any LAN IPv4 address (e.g. "192.168.1.100", "10.157.89.134") or mDNS
+///   hostname (e.g. "sortsense-server.local").
+/// How: Update with your local laptop or server IP on the same WiFi network.
+/// Why: Connects the camera stream directly to the vision inference backend.
 constexpr const char *WS_HOST = "10.157.89.134";
 
-/// Port for the local AI classification server.
+/// Port for the local AI classification server WebSocket.
+/// Choices:
+/// - 8000 (default for FastAPI/uvicorn).
+/// - 8080, 5000, or any open server port.
+/// How: Change port number to match your backend server.
+/// Why: Must match the port where test_ws_server.py or your AI server listens.
 constexpr uint16_t WS_PORT = 8000;
 
 /// WebSocket path where raw binary JPEG camera frames are sent for inference.
 constexpr const char *WS_PATH = "/ws/vision";
 
-/// Pacing interval for streaming camera frames over WebSocket (500 ms = ~2
-/// FPS). Keeps network traffic light while giving responsive real-time
-/// feedback.
+/// Pacing interval for streaming camera frames over WebSocket in milliseconds.
+/// Choices:
+/// - 200 ms (~5 FPS): Responsive, higher network bandwidth (~175 KB/s).
+/// - 500 ms (~2 FPS, recommended default): Balanced latency and bandwidth (~70
+/// KB/s).
+/// - 1000 ms (1 FPS): Lightweight for congested WiFi networks (~35 KB/s).
+/// - 2000 ms (0.5 FPS): Minimal power and network footprint.
+/// How: Change integer millisecond value.
+/// Why: 500 ms provides responsive visual classification feedback when an item
+/// is presented to the chute while maintaining stable WiFi throughput without
+/// overwhelming the inference server.
 constexpr uint32_t FRAME_INTERVAL_MS = 500;
 
 /// Reconnection delay in milliseconds if the WebSocket server drops offline.
+/// Choices:
+/// - 1000 to 10000 ms (default 3000 ms).
+/// How: Change integer millisecond value.
+/// Why: 3 seconds ensures prompt reconnection once the server restarts without
+/// spamming TCP SYN packets.
 constexpr uint32_t WS_RECONNECT_INTERVAL_MS = 3000;
 
-/// Periodic ping/pong heartbeat interval in milliseconds to keep the connection
-/// alive.
+/// Periodic ping/pong heartbeat interval in milliseconds.
+/// Choices:
+/// - 5000 to 30000 ms (default 15000 ms / 15s).
+/// How: Change integer millisecond value.
+/// Why: Keeps NAT router translation tables active and detects dead TCP links
+/// before attempting to send frames.
 constexpr uint32_t WS_HEARTBEAT_INTERVAL_MS = 15000;
 
 /// Minimum allowable time between consecutive heartbeat pings.
@@ -298,6 +533,11 @@ constexpr uint32_t WS_HEARTBEAT_MIN_INTERVAL_MS = 3000;
 
 /// Maximum number of missed heartbeat responses before assuming connection
 /// failure and reconnecting.
+/// Choices:
+/// - 1 to 5 (default 2 missed pings).
+/// How: Change integer count.
+/// Why: 2 missed heartbeats (30 seconds of total silence) reliably flags an
+/// offline server without triggering false reconnects during brief WiFi dips.
 constexpr uint8_t WS_HEARTBEAT_MAX_MISSES = 2;
 
 // Standardized waste compartment bin indices.
@@ -308,13 +548,17 @@ constexpr uint8_t WS_HEARTBEAT_MAX_MISSES = 2;
 // - Bin 2: Metal (Yellow)
 // - Bin 3: General (White)
 // - Bin -1: Idle / Waiting (Soft Cyan Breathing)
+// Choices: 0, 1, 2, 3, or -1.
+// How: Keep synchronized with your machine learning model classification
+// output. Why: Enforces consistent classification categorization across vision,
+// LED, and telemetry subsystems.
 constexpr int8_t BIN_INDEX_PLASTIC = 0;
 constexpr int8_t BIN_INDEX_PAPER = 1;
 constexpr int8_t BIN_INDEX_METAL = 2;
 constexpr int8_t BIN_INDEX_GENERAL = 3;
 constexpr int8_t BIN_INDEX_NONE = -1;
 
-// Human-readable category strings corresponding to each compartment index.
+/// Human-readable category strings corresponding to each compartment index.
 constexpr const char *BIN_NAME_PLASTIC = "plastic";
 constexpr const char *BIN_NAME_PAPER = "paper";
 constexpr const char *BIN_NAME_METAL = "metal";
