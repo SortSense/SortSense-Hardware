@@ -40,13 +40,13 @@ The SortSense firmware is partitioned into a modular, decoupled embedded archite
 ## Interface Contracts
 
 ### `include/config.h`
-- Camera pins: `CAM_PIN_PWDN = -1`, `CAM_PIN_RESET = -1`, `CAM_PIN_XCLK = 10`, `CAM_PIN_SIOD = 40`, `CAM_PIN_SIOC = 39` (`int8_t`)
-- Camera DVP bits: `CAM_PIN_Y9 = 48`, `CAM_PIN_Y8 = 11`, `CAM_PIN_Y7 = 12`, `CAM_PIN_Y6 = 14`, `CAM_PIN_Y5 = 16`, `CAM_PIN_Y4 = 18`, `CAM_PIN_Y3 = 17`, `CAM_PIN_Y2 = 15` (`int8_t`)
-- Camera syncs: `CAM_PIN_VSYNC = 38`, `CAM_PIN_HREF = 47`, `CAM_PIN_PCLK = 13` (`int8_t`)
-- Camera settings: `CAM_XCLK_FREQ_HZ = 20000000` (`uint32_t`), `CAM_FRAME_SIZE = FRAMESIZE_VGA`, `CAM_JPEG_QUALITY = 12` (`uint8_t`), `CAM_FB_COUNT = 2` (`uint8_t`), `CAM_FB_LOCATION = CAMERA_FB_IN_PSRAM`, `CAM_GRAB_MODE = CAMERA_GRAB_LATEST`
-- Reserved I2C bus: `PIN_I2C_SDA = 8`, `PIN_I2C_SCL = 9`, `I2C_BUS_FREQ_HZ = 400000` (`uint8_t`, `uint32_t`)
+- Camera pins: `CAM_PIN_PWDN = -1`, `CAM_PIN_RESET = -1`, `CAM_PIN_XCLK = 15`, `CAM_PIN_SIOD = 4`, `CAM_PIN_SIOC = 5` (`int8_t`)
+- Camera DVP bits: `CAM_PIN_Y9 = 16`, `CAM_PIN_Y8 = 17`, `CAM_PIN_Y7 = 18`, `CAM_PIN_Y6 = 12`, `CAM_PIN_Y5 = 10`, `CAM_PIN_Y4 = 8`, `CAM_PIN_Y3 = 9`, `CAM_PIN_Y2 = 11` (`int8_t`)
+- Camera syncs: `CAM_PIN_VSYNC = 6`, `CAM_PIN_HREF = 7`, `CAM_PIN_PCLK = 13` (`int8_t`)
+- Camera settings: `CAM_XCLK_FREQ_HZ = 20000000` (`uint32_t`), `CAM_FRAME_SIZE = FRAMESIZE_VGA`, `CAM_PIXEL_FORMAT = PIXFORMAT_YUV422`, `CAM_JPEG_QUALITY = 12` (`uint8_t`), `CAM_FB_COUNT = 2` (`uint8_t`), `CAM_FB_LOCATION = CAMERA_FB_IN_PSRAM`, `CAM_GRAB_MODE = CAMERA_GRAB_LATEST`
+- Reserved I2C bus: `PIN_I2C_SDA = 47`, `PIN_I2C_SCL = 48`, `I2C_BUS_FREQ_HZ = 400000` (`uint8_t`, `uint32_t`)
 - Reserved ToF XSHUT: `PIN_TOF_XSHUT_1 = 1`, `PIN_TOF_XSHUT_2 = 2`, `PIN_TOF_XSHUT_3 = 41`, `PIN_TOF_XSHUT_4 = 42` (`uint8_t`)
-- Reserved IR break-beam: `PIN_IR_BEAM_1 = 4`, `PIN_IR_BEAM_2 = 5`, `PIN_IR_BEAM_3 = 6`, `PIN_IR_BEAM_4 = 7` (`uint8_t`, falling-edge interrupt capable)
+- Reserved IR break-beam: `PIN_IR_BEAM_1 = 14`, `PIN_IR_BEAM_2 = 38`, `PIN_IR_BEAM_3 = 39`, `PIN_IR_BEAM_4 = 40` (`uint8_t`, falling-edge interrupt capable)
 - Reserved WS2812B: `PIN_WS2812B_DATA = 21`, `WS2812B_NUM_LEDS = 12` (`uint8_t`)
 
 ### `include/camera_handler.h`

@@ -17,7 +17,7 @@
 
 // =============================================================================
 // CAMERA PIN CONFIGURATION (OV5640 / DVP Interface)
-// Layout: Standard ESP32-S3 CAM (XCLK=10, SIOD=40, SIOC=39)
+// Layout: Standard ESP32-S3 CAM 24-Pin DVP Interface (Working Hardware Map)
 // =============================================================================
 
 /// Power down line (-1 indicates tied permanently to GND on board)
@@ -27,43 +27,43 @@ constexpr int8_t CAM_PIN_PWDN = -1;
 constexpr int8_t CAM_PIN_RESET = -1;
 
 /// Master clock output (XCLK) to OV5640
-constexpr int8_t CAM_PIN_XCLK = 10;
+constexpr int8_t CAM_PIN_XCLK = 15;
 
 /// SCCB / I2C Data line (SIOD)
-constexpr int8_t CAM_PIN_SIOD = 40;
+constexpr int8_t CAM_PIN_SIOD = 4;
 
 /// SCCB / I2C Clock line (SIOC)
-constexpr int8_t CAM_PIN_SIOC = 39;
+constexpr int8_t CAM_PIN_SIOC = 5;
 
 /// DVP Data bit 7 (D7 / Y9)
-constexpr int8_t CAM_PIN_Y9 = 48;
+constexpr int8_t CAM_PIN_Y9 = 16;
 
 /// DVP Data bit 6 (D6 / Y8)
-constexpr int8_t CAM_PIN_Y8 = 11;
+constexpr int8_t CAM_PIN_Y8 = 17;
 
 /// DVP Data bit 5 (D5 / Y7)
-constexpr int8_t CAM_PIN_Y7 = 12;
+constexpr int8_t CAM_PIN_Y7 = 18;
 
 /// DVP Data bit 4 (D4 / Y6)
-constexpr int8_t CAM_PIN_Y6 = 14;
+constexpr int8_t CAM_PIN_Y6 = 12;
 
 /// DVP Data bit 3 (D3 / Y5)
-constexpr int8_t CAM_PIN_Y5 = 16;
+constexpr int8_t CAM_PIN_Y5 = 10;
 
 /// DVP Data bit 2 (D2 / Y4)
-constexpr int8_t CAM_PIN_Y4 = 18;
+constexpr int8_t CAM_PIN_Y4 = 8;
 
 /// DVP Data bit 1 (D1 / Y3)
-constexpr int8_t CAM_PIN_Y3 = 17;
+constexpr int8_t CAM_PIN_Y3 = 9;
 
 /// DVP Data bit 0 (D0 / Y2)
-constexpr int8_t CAM_PIN_Y2 = 15;
+constexpr int8_t CAM_PIN_Y2 = 11;
 
 /// Vertical synchronization (VSYNC) from camera
-constexpr int8_t CAM_PIN_VSYNC = 38;
+constexpr int8_t CAM_PIN_VSYNC = 6;
 
 /// Horizontal reference (HREF) from camera
-constexpr int8_t CAM_PIN_HREF = 47;
+constexpr int8_t CAM_PIN_HREF = 7;
 
 /// Pixel clock (PCLK) from camera
 constexpr int8_t CAM_PIN_PCLK = 13;
@@ -78,8 +78,9 @@ constexpr uint32_t CAM_XCLK_FREQ_HZ = 20000000;
 /// Frame resolution: VGA (640x480)
 constexpr framesize_t CAM_FRAME_SIZE = FRAMESIZE_VGA;
 
-/// Image pixel format: JPEG compressed stream
-constexpr pixformat_t CAM_PIXEL_FORMAT = PIXFORMAT_JPEG;
+/// Image pixel format: Native YUV422 from OV5640 (converted to JPEG via
+/// frame2jpg)
+constexpr pixformat_t CAM_PIXEL_FORMAT = PIXFORMAT_YUV422;
 
 /// JPEG compression quality (0-63, lower = higher quality, 12 requested)
 constexpr uint8_t CAM_JPEG_QUALITY = 12;
@@ -100,13 +101,11 @@ constexpr camera_grab_mode_t CAM_GRAB_MODE = CAMERA_GRAB_LATEST;
 // =============================================================================
 
 // --- 1. Shared I2C Bus for 4x VL53L0X Time-of-Flight Distance Sensors ---
-// Physical header: Header J1 (Pins J1-12 and J1-15 - ESP32-S3 default)
-constexpr uint8_t PIN_I2C_SDA = 8;           ///< I2C Data line
-constexpr uint8_t PIN_I2C_SCL = 9;           ///< I2C Clock line
+constexpr uint8_t PIN_I2C_SDA = 47;          ///< I2C Data line
+constexpr uint8_t PIN_I2C_SCL = 48;          ///< I2C Clock line
 constexpr uint32_t I2C_BUS_FREQ_HZ = 400000; ///< 400 kHz Fast-Mode bus clock
 
 // --- 2. 4x VL53L0X Digital Output XSHUT Shutdown Pins ---
-// Physical header: Header J3 (Pins J3-4, J3-5, J3-7, J3-6)
 constexpr uint8_t PIN_TOF_XSHUT_1 = 1;  ///< ToF Sensor 1 XSHUT (Chute 1)
 constexpr uint8_t PIN_TOF_XSHUT_2 = 2;  ///< ToF Sensor 2 XSHUT (Chute 2)
 constexpr uint8_t PIN_TOF_XSHUT_3 = 41; ///< ToF Sensor 3 XSHUT (Chute 3)
@@ -117,16 +116,14 @@ constexpr uint8_t TOF_I2C_ADDR_BASE =
     0x30; ///< Base address (assigned 0x30..0x33)
 
 // --- 3. 4x LM393 IR Break-Beam Sensor Inputs (Interrupt Capable) ---
-// Physical header: Header J1 (Pins J1-4, J1-5, J1-6, J1-7)
-constexpr uint8_t PIN_IR_BEAM_1 = 4; ///< IR Beam Sensor 1 input
-constexpr uint8_t PIN_IR_BEAM_2 = 5; ///< IR Beam Sensor 2 input
-constexpr uint8_t PIN_IR_BEAM_3 = 6; ///< IR Beam Sensor 3 input
-constexpr uint8_t PIN_IR_BEAM_4 = 7; ///< IR Beam Sensor 4 input
+constexpr uint8_t PIN_IR_BEAM_1 = 14; ///< IR Beam Sensor 1 input
+constexpr uint8_t PIN_IR_BEAM_2 = 38; ///< IR Beam Sensor 2 input
+constexpr uint8_t PIN_IR_BEAM_3 = 39; ///< IR Beam Sensor 3 input
+constexpr uint8_t PIN_IR_BEAM_4 = 40; ///< IR Beam Sensor 4 input
 
 constexpr uint8_t IR_BEAM_COUNT = 4; ///< Total number of IR sensors
 
 // --- 4. 12x WS2812B Addressable RGB LED Status Indicator Strip ---
-// Physical header: Header J3 (Pin J3-18 driven via RMT / FastLED)
 constexpr uint8_t PIN_WS2812B_DATA = 21;  ///< WS2812B single-wire NRZ data pin
 constexpr uint16_t WS2812B_NUM_LEDS = 12; ///< Number of cascaded LEDs
 
@@ -137,8 +134,8 @@ constexpr uint16_t WS2812B_NUM_LEDS = 12; ///< Number of cascaded LEDs
 /// Asynchronous HTTP Server listening port
 constexpr uint16_t HTTP_SERVER_PORT = 80;
 
-/// Serial communication baud rate
-constexpr uint32_t SERIAL_BAUD_RATE = 115200;
+/// Serial communication baud rate (460800 for high-speed grab and monitoring)
+constexpr uint32_t SERIAL_BAUD_RATE = 460800;
 
 /// FreeRTOS core assignments
 constexpr uint8_t CORE_0_NETWORK = 0;  ///< Core 0: Wi-Fi stack & HTTP server

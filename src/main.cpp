@@ -1,82 +1,54 @@
 /**
  * @file main.cpp
- * @brief SortSense: Clean YUV422 @ 20MHz Streamer
+ * @brief System startup, dual-core FreeRTOS task scheduling, non-blocking
+ * Wi-Fi, and asynchronous HTTP server endpoints for SortSense with OV5640
+ * camera.
+ * @target ESP32-S3 WROOM CAM (N16R8) with OV5640 Camera
  */
 
 #include <Arduino.h>
-#include <WiFi.h>
+#include <cstddef>
+#include <cstdint>
+#include <new>
+
+// CRITICAL INCLUDE ORDER: WiFiManager MUST precede ESPAsyncWebServer to allow
+// WebServer.h to define WEBSERVER_H and avoid conflicting HTTP_GET
+// enumerations.
+// clang-format off
+#include <WiFiManager.h>
 #include <ESPAsyncWebServer.h>
+// clang-format on
 #include <esp_camera.h>
-#include <img_converters.h>
 #include <esp_heap_caps.h>
+#include <img_converters.h>
 
-#define CAM_PIN_PWDN    -1
-#define CAM_PIN_RESET   -1
-#define CAM_PIN_XCLK    15
-#define CAM_PIN_SIOD     4
-#define CAM_PIN_SIOC     5
+#include "async_camera_response.h"
+#include "camera_handler.h"
+#include "config.h"
 
-#define CAM_PIN_D7      16
-#define CAM_PIN_D6      17
-#define CAM_PIN_D5      18
-#define CAM_PIN_D4      12
-#define CAM_PIN_D3      10
-#define CAM_PIN_D2       8
-#define CAM_PIN_D1       9
-#define CAM_PIN_D0      11
+// =============================================================================
+// FREERTOS CONFIGURATION & SYSTEM CONSTANTS
+// =============================================================================
+constexpr TickType_t NETWORK_LOOP_DELAY = pdMS_TO_TICKS(10);
+constexpr TickType_t HARDWARE_LOOP_DELAY = pdMS_TO_TICKS(50);
+constexpr TickType_t CAMERA_MUTEX_TIMEOUT =
+    pdMS_TO_TICKS(CAMERA_MUTEX_TIMEOUT_MS);
 
-#define CAM_PIN_VSYNC    6
-#define CAM_PIN_HREF     7
-#define CAM_PIN_PCLK    13
-
-static AsyncWebServer server(80);
+// =============================================================================
+// GLOBAL INSTANCES & SYNCHRONIZATION PRIMITIVES
+// =============================================================================
 static SemaphoreHandle_t cameraMutex = nullptr;
-static bool g_cameraOnline = false;
+static TaskHandle_t networkTaskHandle = nullptr;
+static TaskHandle_t hardwareTaskHandle = nullptr;
+
+static WiFiManager wm;
+static AsyncWebServer server(HTTP_SERVER_PORT);
+static bool isServerRunning = false;
 static uint32_t g_frameCount = 0;
-static uint16_t g_sensorPid = 0;
 
-class AsyncJpegResponse : public AsyncAbstractResponse {
-private:
-    uint8_t* _buf;
-    size_t _readLength;
-    SemaphoreHandle_t _mutex;
-
-public:
-    AsyncJpegResponse(uint8_t* buf, size_t len, SemaphoreHandle_t mutex)
-        : AsyncAbstractResponse(nullptr), _buf(buf), _readLength(0), _mutex(mutex) {
-        _code = 200;
-        _contentType = "image/jpeg";
-        _contentLength = len;
-    }
-
-    ~AsyncJpegResponse() override {
-        if (_buf != nullptr) {
-            free(_buf);
-            _buf = nullptr;
-        }
-        if (_mutex != nullptr) {
-            xSemaphoreGive(_mutex);
-        }
-    }
-
-    size_t _fillBuffer(uint8_t* data, size_t len) override {
-        if (_buf == nullptr) return 0;
-        size_t left = _contentLength - _readLength;
-        if (left > len) {
-            memcpy(data, _buf + _readLength, len);
-            _readLength += len;
-            return len;
-        }
-        memcpy(data, _buf + _readLength, left);
-        _readLength += left;
-        return left;
-    }
-
-    bool _sourceValid() const override {
-        return (_buf != nullptr);
-    }
-};
-
+// =============================================================================
+// EMBEDDED WEB DASHBOARD (HTML / CSS / JS)
+// =============================================================================
 static const char INDEX_HTML[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html lang="en">
@@ -190,184 +162,285 @@ static const char INDEX_HTML[] PROGMEM = R"rawliteral(
 </html>
 )rawliteral";
 
-void setup() {
-    Serial.begin(460800);
-    delay(500);
+// =============================================================================
+// HTTP ROUTE DEFINITIONS
+// =============================================================================
+/**
+ * @brief Registers all HTTP request handlers on the AsyncWebServer instance.
+ */
+void setupServerRoutes(void) {
+  // -------------------------------------------------------------------------
+  // Route 1: GET / - Live Camera Stream Web Dashboard
+  // -------------------------------------------------------------------------
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(200, "text/html", INDEX_HTML);
+  });
 
-    Serial.println("\n\n==================================================");
-    Serial.println("  SORTSENSE: OV5640 CLEAN YUV422 STREAMER         ");
-    Serial.println("==================================================");
-
-    if (!psramFound()) {
-        Serial.println("[ERROR] PSRAM not found!");
-        return;
-    }
-    Serial.printf("[PSRAM] Octal PSRAM Online: %u KB Free\n", ESP.getFreePsram() / 1024);
-
-    cameraMutex = xSemaphoreCreateMutex();
-
-    camera_config_t config = {};
-    config.ledc_channel = LEDC_CHANNEL_0;
-    config.ledc_timer   = LEDC_TIMER_0;
-
-    config.pin_pwdn     = CAM_PIN_PWDN;
-    config.pin_reset    = CAM_PIN_RESET;
-    config.pin_xclk     = CAM_PIN_XCLK;
-    config.pin_sccb_sda = CAM_PIN_SIOD;
-    config.pin_sccb_scl = CAM_PIN_SIOC;
-
-    config.pin_d7       = CAM_PIN_D7;
-    config.pin_d6       = CAM_PIN_D6;
-    config.pin_d5       = CAM_PIN_D5;
-    config.pin_d4       = CAM_PIN_D4;
-    config.pin_d3       = CAM_PIN_D3;
-    config.pin_d2       = CAM_PIN_D2;
-    config.pin_d1       = CAM_PIN_D1;
-    config.pin_d0       = CAM_PIN_D0;
-
-    config.pin_vsync    = CAM_PIN_VSYNC;
-    config.pin_href     = CAM_PIN_HREF;
-    config.pin_pclk     = CAM_PIN_PCLK;
-
-    // 20 MHz master clock: OV5640 native PLL operating frequency
-    config.xclk_freq_hz = 20000000;
-    config.pixel_format = PIXFORMAT_YUV422;
-    config.frame_size   = FRAMESIZE_VGA;     // 640x480
-    config.fb_count     = 2;
-    config.fb_location  = CAMERA_FB_IN_PSRAM;
-    config.grab_mode    = CAMERA_GRAB_LATEST;
-
-    Serial.println("[CAMERA] Initializing OV5640 (VGA 640x480, YUV422 @ 20MHz)...");
-    esp_err_t err = esp_camera_init(&config);
-    if (err != ESP_OK) {
-        Serial.printf("[ERROR] esp_camera_init failed: 0x%04x\n", err);
-        return;
+  // -------------------------------------------------------------------------
+  // Route 2: GET /capture - Acquire and stream JPEG snapshot via YUV422->JPEG
+  // -------------------------------------------------------------------------
+  server.on("/capture", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if (cameraMutex == nullptr) {
+      request->send(500, "text/plain", "Camera mutex uninitialized\n");
+      return;
     }
 
-    sensor_t* s = esp_camera_sensor_get();
-    if (s != nullptr) {
-        g_sensorPid = s->id.PID;
-        Serial.printf(">>> [SUCCESS] OV5640 Online! PID: 0x%04X\n", g_sensorPid);
-        s->set_vflip(s, 1);
-        s->set_hmirror(s, 0);
-    }
-    g_cameraOnline = true;
-
-    // Warm-up flush
-    delay(400);
-    for (int i = 0; i < 4; i++) {
-        camera_fb_t* dummy = esp_camera_fb_get();
-        if (dummy) esp_camera_fb_return(dummy);
-        delay(30);
+    // Attempt mutex acquisition with bounded timeout
+    if (xSemaphoreTake(cameraMutex, CAMERA_MUTEX_TIMEOUT) != pdTRUE) {
+      request->send(503, "text/plain",
+                    "Camera busy - lock acquisition timeout\n");
+      return;
     }
 
-    // Benchmark capture
-    camera_fb_t* fb = esp_camera_fb_get();
-    if (fb != nullptr) {
-        uint8_t* jpg = nullptr;
-        size_t jpg_len = 0;
-        unsigned long t0 = millis();
-        bool ok = frame2jpg(fb, 70, &jpg, &jpg_len);
-        unsigned long dt = millis() - t0;
-        esp_camera_fb_return(fb);
-
-        if (ok && jpg != nullptr) {
-            Serial.printf("[BENCHMARK] YUV422 JPEG: %u bytes in %lu ms\n",
-                          static_cast<uint32_t>(jpg_len), dt);
-            free(jpg);
-        }
+    // Verify camera operational state
+    if (!is_camera_initialized()) {
+      xSemaphoreGive(cameraMutex);
+      request->send(500, "text/plain", "Camera hardware not initialized\n");
+      return;
     }
 
-    // Wi-Fi SoftAP
-    Serial.println("\n[WIFI] Starting SoftAP 'ESP32-S3-CAM-TEST'...");
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP("ESP32-S3-CAM-TEST");
-    IPAddress IP = WiFi.softAPIP();
-    Serial.printf("[WIFI] Connected! Open http://%s/ in your browser\n", IP.toString().c_str());
+    // Acquire frame buffer from hardware driver (YUV422 in PSRAM)
+    camera_fb_t *fb = camera_acquire_frame();
+    if (fb == nullptr) {
+      xSemaphoreGive(cameraMutex);
+      request->send(503, "text/plain", "Failed to capture frame from camera\n");
+      return;
+    }
 
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest* req) {
-        req->send(200, "text/html", INDEX_HTML);
-    });
+    g_frameCount++;
 
-    server.on("/capture", HTTP_GET, [](AsyncWebServerRequest* req) {
-        if (!g_cameraOnline) {
-            req->send(503, "text/plain", "Camera offline");
-            return;
-        }
+    // Convert YUV422 DMA buffer to compressed JPEG
+    uint8_t *jpg_buf = nullptr;
+    size_t jpg_len = 0;
+    bool ok = frame2jpg(fb, 70, &jpg_buf, &jpg_len);
+    camera_release_frame(fb); // Release DMA buffer back to driver immediately
 
-        if (xSemaphoreTake(cameraMutex, pdMS_TO_TICKS(500)) != pdTRUE) {
-            req->send(503, "text/plain", "Camera busy");
-            return;
-        }
+    if (!ok || jpg_buf == nullptr) {
+      xSemaphoreGive(cameraMutex);
+      request->send(500, "text/plain", "JPEG compression failed\n");
+      return;
+    }
 
-        camera_fb_t* fb = esp_camera_fb_get();
-        if (fb == nullptr) {
-            xSemaphoreGive(cameraMutex);
-            req->send(503, "text/plain", "Capture timeout");
-            return;
-        }
+    // Wrap dynamically allocated JPEG buffer in RAII streaming response
+    AsyncJpegResponse *response =
+        new (std::nothrow) AsyncJpegResponse(jpg_buf, jpg_len, cameraMutex);
+    if (response == nullptr) {
+      free(jpg_buf);
+      xSemaphoreGive(cameraMutex);
+      request->send(500, "text/plain", "Failed to allocate HTTP response\n");
+      return;
+    }
 
-        uint8_t* jpg_buf = nullptr;
-        size_t jpg_len = 0;
-        bool ok = frame2jpg(fb, 70, &jpg_buf, &jpg_len);
-        esp_camera_fb_return(fb);
+    response->addHeader("Access-Control-Allow-Origin", "*");
+    response->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    request->send(response);
+  });
 
-        if (!ok || jpg_buf == nullptr) {
-            xSemaphoreGive(cameraMutex);
-            req->send(500, "text/plain", "Compression error");
-            return;
-        }
+  // -------------------------------------------------------------------------
+  // Route 3: GET /status - Return JSON system telemetry and heap diagnostics
+  // -------------------------------------------------------------------------
+  server.on("/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+    char statusJson[256];
+    snprintf(statusJson, sizeof(statusJson),
+             "{\"status\":\"ok\",\"ip\":\"%s\",\"wifi_connected\":%s,\"camera_"
+             "initialized\":%s,\"frame_count\":%u,\"free_heap\":%u,\"free_"
+             "psram\":%u,\"uptime_ms\":%lu}",
+             (WiFi.status() == WL_CONNECTED) ? WiFi.localIP().toString().c_str()
+                                             : "0.0.0.0",
+             (WiFi.status() == WL_CONNECTED) ? "true" : "false",
+             is_camera_initialized() ? "true" : "false", g_frameCount,
+             static_cast<uint32_t>(ESP.getFreeHeap()),
+             static_cast<uint32_t>(ESP.getFreePsram()),
+             static_cast<unsigned long>(millis()));
+    request->send(200, "application/json", statusJson);
+  });
 
-        AsyncJpegResponse* resp = new AsyncJpegResponse(jpg_buf, jpg_len, cameraMutex);
-        resp->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-        resp->addHeader("Access-Control-Allow-Origin", "*");
-        req->send(resp);
-    });
-
-    server.begin();
-    Serial.println("[SYSTEM] Ready! Check live stream at http://192.168.4.1/");
-    Serial.println("[SYSTEM] Send 'c' over Serial at 460800 baud to grab photo anytime!\n");
+  // -------------------------------------------------------------------------
+  // Route 4: 404 Handler - Unmatched routes
+  // -------------------------------------------------------------------------
+  server.onNotFound([](AsyncWebServerRequest *request) {
+    request->send(404, "text/plain", "404: Not Found\n");
+  });
 }
 
-void loop() {
-    if (Serial.available()) {
-        char c = Serial.read();
-        if (c == 'c' || c == 's') {
-            if (xSemaphoreTake(cameraMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
-                camera_fb_t* fb = esp_camera_fb_get();
-                if (fb != nullptr) {
-                    uint8_t* jpg_buf = nullptr;
-                    size_t jpg_len = 0;
-                    bool ok = frame2jpg(fb, 75, &jpg_buf, &jpg_len);
-                    esp_camera_fb_return(fb);
+// =============================================================================
+// FREERTOS TASK IMPLEMENTATIONS
+// =============================================================================
+/**
+ * @brief Core 0 Task: Servicing WiFiManager captive portal and network state.
+ */
+void networkTask(void *pvParameters) {
+  (void)pvParameters;
+  Serial.println("[NetworkTask] Started on Core 0");
 
-                    if (ok && jpg_buf != nullptr) {
-                        Serial.println("---BEGIN_PHOTO---");
-                        static const char b64_chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-                        for (size_t i = 0; i < jpg_len; i += 3) {
-                            uint32_t a = (i < jpg_len) ? jpg_buf[i] : 0;
-                            uint32_t b = (i + 1 < jpg_len) ? jpg_buf[i + 1] : 0;
-                            uint32_t c_byte = (i + 2 < jpg_len) ? jpg_buf[i + 2] : 0;
-                            uint32_t triple = (a << 16) + (b << 8) + c_byte;
-                            Serial.print(b64_chars[(triple >> 18) & 0x3F]);
-                            Serial.print(b64_chars[(triple >> 12) & 0x3F]);
-                            Serial.print((i + 1 < jpg_len) ? b64_chars[(triple >> 6) & 0x3F] : '=');
-                            Serial.print((i + 2 < jpg_len) ? b64_chars[triple & 0x3F] : '=');
-                            if ((i / 3) % 18 == 17) Serial.println();
-                        }
-                        Serial.println("\n---END_PHOTO---");
-                        free(jpg_buf);
-                    } else {
-                        Serial.println("[ERROR] frame2jpg failed!");
-                    }
-                } else {
-                    Serial.println("[ERROR] esp_camera_fb_get failed!");
-                }
-                xSemaphoreGive(cameraMutex);
-            } else {
-                Serial.println("[ERROR] Camera mutex busy!");
-            }
-        }
+  bool previousConnectedState = false;
+
+  for (;;) {
+    // Service non-blocking captive portal DNS & HTTP requests
+    wm.process();
+
+    bool currentConnectedState = (WiFi.status() == WL_CONNECTED);
+
+    // State transition: Wi-Fi connection established
+    if (currentConnectedState && !previousConnectedState) {
+      previousConnectedState = true;
+      Serial.print("[WiFi] Connected! Assigned IP: ");
+      Serial.println(WiFi.localIP());
+
+      // Defer starting AsyncWebServer until Wi-Fi is established
+      if (!isServerRunning) {
+        server.begin();
+        isServerRunning = true;
+        Serial.printf(
+            "[WebServer] Async HTTP Server listening on http://%s:%u/\n",
+            WiFi.localIP().toString().c_str(), HTTP_SERVER_PORT);
+      }
     }
-    delay(20);
+    // State transition: Wi-Fi connection lost
+    else if (!currentConnectedState && previousConnectedState) {
+      previousConnectedState = false;
+      Serial.println("[WiFi] Connection lost. Attempting reconnection...");
+    }
+
+    // Cooperative yield to reset Core 0 Task Watchdog Timer (TWDT)
+    vTaskDelay(NETWORK_LOOP_DELAY);
+  }
+}
+
+/**
+ * @brief Core 1 Task: Hardware acquisition, sensor polling, and peripheral
+ * control.
+ */
+void hardwareTask(void *pvParameters) {
+  (void)pvParameters;
+  Serial.println("[HardwareTask] Started on Core 1");
+
+  for (;;) {
+    // Hardware task loop - handles sensor polling and future peripheral
+    // pipelines (4x VL53L0X ToF ranging, LM393 IR break-beam interrupts,
+    // WS2812B animations)
+    vTaskDelay(HARDWARE_LOOP_DELAY);
+  }
+}
+
+// =============================================================================
+// SYSTEM ENTRY POINTS (SETUP & LOOP)
+// =============================================================================
+void setup(void) {
+  // Initialize Serial console for USB CDC / UART output
+  Serial.begin(SERIAL_BAUD_RATE);
+  delay(1000); // Allow serial connection to stabilize on boot
+  Serial.println("\n=== SortSense ESP32-S3 Firmware Initializing ===");
+
+  // 1. Create mutual exclusion semaphore for thread-safe camera access
+  cameraMutex = xSemaphoreCreateMutex();
+  if (cameraMutex == nullptr) {
+    Serial.println("[FATAL] Failed to create cameraMutex! Halting.");
+    while (true) {
+      vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+  }
+
+  // 2. Initialize Camera Driver via modular camera_handler interface (Clean
+  // YUV422)
+  Serial.println("[Init] Initializing OV5640 Camera Driver...");
+  esp_err_t camErr = camera_init();
+  if (camErr != ESP_OK) {
+    Serial.printf("[WARN] Camera initialization failed (0x%x). Operating in "
+                  "degraded mode.\n",
+                  camErr);
+  } else {
+    Serial.println("[Init] OV5640 Camera initialized successfully.");
+  }
+
+  // 3. Configure HTTP routes on AsyncWebServer instance
+  setupServerRoutes();
+
+  // 4. Configure WiFiManager in non-blocking mode
+  Serial.println("[Init] Initializing WiFiManager (non-blocking)...");
+  wm.setConfigPortalBlocking(false);
+  wm.setConfigPortalTimeout(WIFI_PORTAL_TIMEOUT_SEC);
+
+  bool connected = wm.autoConnect(WIFI_AP_NAME);
+  if (connected) {
+    Serial.print("[WiFi] Connected to configured AP. IP: ");
+    Serial.println(WiFi.localIP());
+    server.begin();
+    isServerRunning = true;
+    Serial.printf("[WebServer] Async HTTP Server listening on http://%s:%u/\n",
+                  WiFi.localIP().toString().c_str(), HTTP_SERVER_PORT);
+  } else {
+    Serial.println("[WiFi] Starting non-blocking connection / captive portal "
+                   "'SortSense-AP'...");
+  }
+
+  // 5. Pin FreeRTOS tasks to specific processor cores
+  BaseType_t netTaskStatus = xTaskCreatePinnedToCore(
+      networkTask, "NetworkTask", TASK_STACK_NETWORK, nullptr,
+      TASK_PRIORITY_NETWORK, &networkTaskHandle, CORE_0_NETWORK);
+
+  BaseType_t hwTaskStatus = xTaskCreatePinnedToCore(
+      hardwareTask, "HardwareTask", TASK_STACK_HARDWARE, nullptr,
+      TASK_PRIORITY_HARDWARE, &hardwareTaskHandle, CORE_1_HARDWARE);
+
+  if (netTaskStatus != pdPASS || hwTaskStatus != pdPASS) {
+    Serial.println("[ERROR] Failed to schedule one or more FreeRTOS tasks!");
+  } else {
+    Serial.println("[Init] FreeRTOS dual-core tasks scheduled successfully.");
+  }
+
+  Serial.println("=== SortSense Initialization Complete ===");
+  Serial.printf("[SYSTEM] Send 'c' or 's' over Serial at %u baud to capture "
+                "snapshot anytime.\n",
+                SERIAL_BAUD_RATE);
+}
+
+void loop(void) {
+  // High-speed Serial photo grab listener (compatible with tools/grab_test.py)
+  if (Serial.available()) {
+    char c = Serial.read();
+    if (c == 'c' || c == 's') {
+      if (cameraMutex != nullptr &&
+          xSemaphoreTake(cameraMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        camera_fb_t *fb = camera_acquire_frame();
+        if (fb != nullptr) {
+          uint8_t *jpg_buf = nullptr;
+          size_t jpg_len = 0;
+          bool ok = frame2jpg(fb, 75, &jpg_buf, &jpg_len);
+          camera_release_frame(fb);
+
+          if (ok && jpg_buf != nullptr) {
+            Serial.println("---BEGIN_PHOTO---");
+            static const char b64_chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh"
+                                            "ijklmnopqrstuvwxyz0123456789+/";
+            for (size_t i = 0; i < jpg_len; i += 3) {
+              uint32_t a = (i < jpg_len) ? jpg_buf[i] : 0;
+              uint32_t b = (i + 1 < jpg_len) ? jpg_buf[i + 1] : 0;
+              uint32_t c_byte = (i + 2 < jpg_len) ? jpg_buf[i + 2] : 0;
+              uint32_t triple = (a << 16) + (b << 8) + c_byte;
+              Serial.print(b64_chars[(triple >> 18) & 0x3F]);
+              Serial.print(b64_chars[(triple >> 12) & 0x3F]);
+              Serial.print((i + 1 < jpg_len) ? b64_chars[(triple >> 6) & 0x3F]
+                                             : '=');
+              Serial.print((i + 2 < jpg_len) ? b64_chars[triple & 0x3F] : '=');
+              if ((i / 3) % 18 == 17)
+                Serial.println();
+            }
+            Serial.println("\n---END_PHOTO---");
+            free(jpg_buf);
+          } else {
+            Serial.println("[ERROR] frame2jpg failed!");
+          }
+        } else {
+          Serial.println("[ERROR] camera_acquire_frame failed!");
+        }
+        xSemaphoreGive(cameraMutex);
+      } else {
+        Serial.println("[ERROR] Camera mutex busy!");
+      }
+    }
+  }
+
+  // Yield execution slice to idle task and watchdog on Core 1
+  vTaskDelay(pdMS_TO_TICKS(20));
 }
