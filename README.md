@@ -1,4 +1,4 @@
-# SortSense — ESP32-S3 Hardware Subsystem
+# SortSense - ESP32-S3 Hardware Subsystem
 
 [![PlatformIO CI](https://img.shields.io/badge/PlatformIO-Build%20Passing-00878a?logo=platformio&logoColor=white)](platformio.ini)
 [![Unit Tests](https://img.shields.io/badge/Unity%20Tests-73%2F73%20Passing-brightgreen?logo=checkmarx&logoColor=white)](test/)
@@ -10,12 +10,12 @@ The **SortSense Hardware Subsystem** is an edge-computing smart waste classifica
 
 ---
 
-## 🚀 Key Capabilities
+## Key Capabilities
 
 - **Dual-Core FreeRTOS Architecture**:
   - **Core 0**: Wi-Fi stack, non-blocking captive portal provisioning (`WiFiManager`), asynchronous Web Dashboard (`ESPAsyncWebServer`), and WebSocket networking.
   - **Core 1**: Real-time zero-copy camera DMA acquisition, interrupt-driven drop sensing, and multi-sensor I2C ranging.
-- **Low-Latency Vision Pipeline**: Captures HVGA (480x320) frames from the OV5640 camera, buffered in 8MB Octal PSRAM, streaming binary JPEG frames over WebSocket to a local LAN AI classification server at 20–30 FPS.
+- **Low-Latency Vision Pipeline**: Captures HVGA (480x320) frames from the OV5640 camera, buffered in 8MB Octal PSRAM, streaming binary JPEG frames over WebSocket to a local LAN AI classification server at 20-30 FPS.
 - **Microsecond Drop Confirmation**: 4x LM393 infrared break-beam sensors on hardware `FALLING` interrupts with 500 ms software debounce, verifying physical drops within 5 ms via `POST /internal/verify-drop`.
 - **Laser Time-of-Flight Telemetry**: 4x Pololu VL53L0X laser distance sensors on a shared I2C bus using sequential XSHUT address bootstrapping (`0x30`..`0x33`), periodically transmitting compartment capacities to Kiyo's Vercel Cloud Website over HTTPS.
 - **Onboard WS2812 Visual UX**: Drives the built-in NeoPixel on GPIO 48 without requiring external soldered LED strips. Visualizes bin classifications (Plastic: Blue, Paper: Green, Metal: Yellow, General: White, Idle: Cyan breathing, Full Alert: Pulsing Red).
@@ -23,7 +23,7 @@ The **SortSense Hardware Subsystem** is an edge-computing smart waste classifica
 
 ---
 
-## 🏗️ System Architecture
+## System Architecture
 
 ```mermaid
 flowchart TD
@@ -54,7 +54,7 @@ flowchart TD
 
 ---
 
-## 📌 Master Hardware Pinout Reference
+## Master Hardware Pinout Reference
 
 All active GPIOs are mathematically isolated to eliminate internal silicon collisions:
 
@@ -73,7 +73,7 @@ All active GPIOs are mathematically isolated to eliminate internal silicon colli
 | **IR Break-Beam 4** | Digital Out (General) | **GPIO 40** | Input | Falling-edge hardware interrupt (`INPUT_PULLUP`) |
 | **Camera DVP** | XCLK | **GPIO 15** | Output | 20 MHz sensor master clock |
 | **Camera DVP** | SIOD / SIOC | **GPIO 4, 5** | I/O | SCCB camera control bus |
-| **Camera DVP** | D0 – D7 | **11, 9, 8, 10, 12, 18, 17, 16** | Input | 8-bit parallel DVP pixel data bus |
+| **Camera DVP** | D0 - D7 | **11, 9, 8, 10, 12, 18, 17, 16** | Input | 8-bit parallel DVP pixel data bus |
 | **Camera DVP** | VSYNC, HREF, PCLK | **GPIO 6, 7, 13** | Input | Synchronization clocks |
 
 > [!IMPORTANT]
@@ -81,7 +81,7 @@ All active GPIOs are mathematically isolated to eliminate internal silicon colli
 
 ---
 
-## 🌐 Endpoints Integration Cheat Sheet
+## Endpoints Integration Cheat Sheet
 
 The ESP32-S3 communicates across 3 endpoints:
 
@@ -132,7 +132,7 @@ The ESP32-S3 communicates across 3 endpoints:
 
 ---
 
-## 🚦 Visual UX & LED Color Indication
+## Visual UX & LED Color Indication
 
 The onboard RGB LED on GPIO 48 provides visual feedback:
 
@@ -144,11 +144,11 @@ The onboard RGB LED on GPIO 48 provides visual feedback:
 | **General** | `3` | **White** (`#DCDCDC`) | Solid indicator |
 | **Idle / Standby** | `-1` | **Cyan** (`#001423`) | Gentle breathing animation |
 | **Drop Confirmed** | Any | **Bright Flash** (`#FFFFFF`) | 600 ms confirmation burst |
-| **Bin Full ($\ge 90\%$)** | Any | **Pulsing Red** (`#FF0000`) | Continuous alert pulse |
+| **Bin Full (>= 90%)** | Any | **Pulsing Red** (`#FF0000`) | Continuous alert pulse |
 
 ---
 
-## 🛠️ Quickstart Guide
+## Quickstart Guide
 
 ### 1. Requirements
 - [PlatformIO Core](https://platformio.org/install/cli) or PlatformIO IDE extension for VS Code.
@@ -183,7 +183,7 @@ pio device monitor -b 460800
 
 ---
 
-## 🧪 Automated Unit Test Suite
+## Automated Unit Test Suite
 
 The repository contains **73 hermetic host-native unit tests** executed using PlatformIO's Unity test framework on your workstation without physical hardware:
 
@@ -206,7 +206,7 @@ pio test -e native
 
 ---
 
-## 📂 Repository Layout
+## Repository Layout
 
 ```
 SortSense-Hardware/
@@ -243,5 +243,5 @@ SortSense-Hardware/
 
 ---
 
-## 📄 License
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+## License
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

@@ -1,10 +1,10 @@
-# SortSense Hardware — Complete Setup, Placement & Calibration Guide
+# SortSense Hardware - Complete Setup, Placement & Calibration Guide
 
 This guide walks you through setting up, placing, calibrating, and testing the SortSense hardware subsystem step-by-step. Follow this procedure from top to bottom before your live pitch or demo.
 
 ---
 
-## ⚡ What to Do First (Quick-Start Checklist)
+## 1. What to Do First (Quick-Start Checklist)
 
 Follow these steps in exact order to avoid common pitfalls:
 
@@ -33,7 +33,7 @@ Follow these steps in exact order to avoid common pitfalls:
 
 ---
 
-## 1. Hardware Pinout & Wiring Reference
+## 2. Hardware Pinout & Wiring Reference
 
 ### Master Pinout Table (ESP32-S3-WROOM-1-N16R8)
 
@@ -55,7 +55,7 @@ Follow these steps in exact order to avoid common pitfalls:
 
 > [!CAUTION]
 > **Silicon Pin Reservations**:
-> Never use GPIOs 33–37 (internally connected to the 8MB Octal PSRAM), GPIOs 26–32 (SPI Flash), GPIOs 19–20 (USB OTG D+/D-), GPIOs 43–44 (UART0), or strapping pins 0, 3, 45, 46. Doing so will cause instant kernel panics or boot loops.
+> Never use GPIOs 33-37 (internally connected to the 8MB Octal PSRAM), GPIOs 26-32 (SPI Flash), GPIOs 19-20 (USB OTG D+/D-), GPIOs 43-44 (UART0), or strapping pins 0, 3, 45, 46. Doing so will cause instant kernel panics or boot loops.
 
 ---
 
@@ -63,65 +63,65 @@ Follow these steps in exact order to avoid common pitfalls:
 
 If you are demoing with **1 bin chute**, wire only:
 1. **VL53L0X ToF #1**:
-   - `VIN` $\rightarrow$ `3V3`
-   - `GND` $\rightarrow$ `GND`
-   - `SDA` $\rightarrow$ `GPIO 47`
-   - `SCL` $\rightarrow$ `GPIO 21`
-   - `XSHUT` $\rightarrow$ `GPIO 1`
+   - `VIN` -> `3V3`
+   - `GND` -> `GND`
+   - `SDA` -> `GPIO 47`
+   - `SCL` -> `GPIO 21`
+   - `XSHUT` -> `GPIO 1`
 2. **LM393 IR Break-Beam #1**:
-   - `VCC` $\rightarrow$ `3V3` (or `5V`)
-   - `GND` $\rightarrow$ `GND`
-   - `D0` / `OUT` $\rightarrow$ `GPIO 14`
+   - `VCC` -> `3V3` (or `5V`)
+   - `GND` -> `GND`
+   - `D0` / `OUT` -> `GPIO 14`
 3. **Onboard RGB LED**: Built into the ESP32-S3 module on **GPIO 48** (zero wires needed).
 
 ---
 
-## 2. Physical Placement & Mounting Guide
+## 3. Physical Placement & Mounting Guide
 
 ```
                          [ OV5640 Camera ]
-                       (Overhead 45° Angle)
-                                │
-                                ▼
-    Incoming Item ───►  ┌───────────────┐
-                        │   Drop Chute  │
-                        └───────┬───────┘
-                                │
-            [ IR Emitter ] ─────┼─────► [ IR Receiver (LM393) ]
-            (GPIO 14)           │       (Optical Break-Beam Path)
-                                ▼
-                       ┌─────────────────┐
-                       │                 │
-    [ VL53L0X ToF ] ──►│  Top Inner Rim  │  (Faces directly DOWN)
-    (GPIO 47 / 21)     │  │ (Laser Cone) │
-                       │  ▼              │
-                       │                 │
-                       │ ~~~~~~~~~~~~~~~ │  ◄── Full Brim Level (BIN_FULL_MM = 50 mm)
-                       │   Trash Fill    │
-                       │                 │
-                       │                 │
-                       └─────────────────┘  ◄── Empty Floor (BIN_EMPTY_MM = 400 mm)
+                       (Overhead 45 deg Angle)
+                                |
+                                v
+    Incoming Item --->  +---------------+
+                        |   Drop Chute  |
+                        +-------+-------+
+                                |
+            [ IR Emitter ] -----+-----> [ IR Receiver (LM393) ]
+            (GPIO 14)           |       (Optical Break-Beam Path)
+                                v
+                       +-----------------+
+                       |                 |
+    [ VL53L0X ToF ] -->|  Top Inner Rim  |  (Faces directly DOWN)
+    (GPIO 47 / 21)     |  | (Laser Cone) |
+                       |  v              |
+                       |                 |
+                       | ~~~~~~~~~~~~~~~ |  <-- Full Brim Level (BIN_FULL_MM = 50 mm)
+                       |   Trash Fill    |
+                       |                 |
+                       |                 |
+                       +-----------------+  <-- Empty Floor (BIN_EMPTY_MM = 400 mm)
 ```
 
 ### A. Camera Placement (OV5640)
-- **Position**: Mounted 20–35 cm above the waste presentation area or chute intake.
-- **Angle**: 45°–60° downward tilt so the item fills at least 40% of the frame.
+- **Position**: Mounted 20-35 cm above the waste presentation area or chute intake.
+- **Angle**: 45-60 degree downward tilt so the item fills at least 40% of the frame.
 - **Orientation**: Standard ribbon cable enters from the bottom. Default firmware configuration enables vertical flip (`CAM_VFLIP = 1`) and non-mirrored (`CAM_HMIRROR = 0`) to match human upright perspective.
 - **Lighting**: Ensure even, diffuse lighting. Avoid strong shadows or backlit glare.
 
 ### B. IR Break-Beam Placement (LM393)
-- **Position**: Mounted across the throat of the drop chute, 5–10 cm below the chute opening.
+- **Position**: Mounted across the throat of the drop chute, 5-10 cm below the chute opening.
 - **Alignment**: The clear IR transmitter LED and dark receiver photodiode must point **directly at each other** along a straight optical line.
-- **Function**: When an item falls through the chute, it breaks the beam for 20–100 ms, instantly triggering the ESP32-S3 interrupt.
+- **Function**: When an item falls through the chute, it breaks the beam for 20-100 ms, instantly triggering the ESP32-S3 interrupt.
 
 ### C. Time-of-Flight Placement (VL53L0X)
 - **Position**: Mounted on the underside of the top lid or container rim, pointing **straight down** toward the bottom of the bin.
-- **Field of View (FoV)**: The sensor emits a 25° conical laser beam. Keep the sensor at least 3 cm away from the bin's side walls so the beam reflects off trash rather than the wall.
+- **Field of View (FoV)**: The sensor emits a 25 degree conical laser beam. Keep the sensor at least 3 cm away from the bin's side walls so the beam reflects off trash rather than the wall.
 - **Clearance**: Keep wires and mounting brackets out of the sensor's optical window.
 
 ---
 
-## 3. Calibration Procedures
+## 4. Calibration Procedures
 
 ### A. Calibrating the LM393 IR Break-Beam Sensor
 The LM393 comparator board features two onboard LEDs:
@@ -129,15 +129,15 @@ The LM393 comparator board features two onboard LEDs:
 - **Signal LED (D0)** (Green/Blue): Illuminates when the beam is broken (`D0 = LOW`).
 
 ```
-          ┌───────────────────────────────────────────────┐
-          │  [Power LED]             [Signal LED D0]     │
-          │                                               │
-          │           ┌──────────┐                        │
-          │           │ [ +  - ] │ ◄── Blue Trimpot       │
-          │           └──────────┘     (Sensitivity)      │
-          │                                               │
-          │  [VCC]    [GND]    [D0/OUT]    [A0]           │
-          └────┬────────┬─────────┬──────────┬────────────┘
+          +-----------------------------------------------+
+          |  [Power LED]             [Signal LED D0]      |
+          |                                               |
+          |           +----------+                        |
+          |           | [ +  - ] | <-- Blue Trimpot       |
+          |           +----------+     (Sensitivity)      |
+          |                                               |
+          |  [VCC]    [GND]    [D0/OUT]    [A0]           |
+          +----+--------+---------+----------+------------+
 ```
 
 1. Power on the ESP32-S3 or connect 3.3V to the LM393 module.
@@ -173,7 +173,7 @@ constexpr uint16_t BIN_FULL_MM  = 50;  // 100% full threshold (mm)
 #### Step 4: Live Verification over Serial Monitor
 Open PlatformIO Serial Monitor at **460800 baud**:
 ```bash
-~/.platformio/penv/bin/pio device monitor -b 460800
+pio device monitor -b 460800
 ```
 - Press `t` on your keyboard to print live compartment fill telemetry:
   ```text
@@ -189,7 +189,7 @@ Open PlatformIO Serial Monitor at **460800 baud**:
 
 ---
 
-## 4. Software & Network Bringup
+## 5. Software & Network Bringup
 
 ### Step 1: Start the Interactive Python Test Server
 On your laptop (connected to the same Wi-Fi network as the ESP32):
@@ -206,13 +206,13 @@ This starts:
 Check your laptop's LAN IP address (`ip a` or `ifconfig`). Open [config.h](file:///home/Fabio/project/univ/SortSense/SortSense-Hardware/include/config.h#L196):
 ```cpp
 // include/config.h
-constexpr const char *WS_HOST = "192.168.0.66"; // Change to your laptop's IP
+constexpr const char *WS_HOST = "10.157.89.134"; // Set to your current laptop IP
 constexpr uint16_t    WS_PORT = 8000;
 ```
 
 ### Step 3: Flash the Firmware
 ```bash
-~/.platformio/penv/bin/pio run -e esp32-s3-devkitc-1 -t upload
+pio run -e esp32-s3-devkitc-1 -t upload
 ```
 
 ### Step 4: Wi-Fi Provisioning (First Boot Only)
@@ -223,7 +223,7 @@ constexpr uint16_t    WS_PORT = 8000;
 
 ---
 
-## 5. Live Pitch & Demonstration Workflow
+## 6. Live Pitch & Demonstration Workflow
 
 ### Interactive REPL Commands
 While `test_ws_server.py` is running, type commands into the terminal to control the ESP32:
@@ -235,7 +235,7 @@ While `test_ws_server.py` is running, type commands into the terminal to control
 | `2` | Metal | `{"category": "metal", "bin_index": 2}` | **Solid Yellow** |
 | `3` | General | `{"category": "general", "bin_index": 3}` | **Solid White** |
 | `none` / `-1` | Idle | `{"category": "none", "bin_index": -1}` | **Soft Cyan (Breathing pulse)** |
-| `auto` | Auto-Cycle | Cycles 0 $\rightarrow$ 1 $\rightarrow$ 2 $\rightarrow$ 3 every 3s | Cycles colors automatically |
+| `auto` | Auto-Cycle | Cycles 0 -> 1 -> 2 -> 3 every 3s | Cycles colors automatically |
 | `status` | Diagnostic | Prints client connection status and latest frame size | Shows active stream info |
 
 ---
@@ -265,8 +265,8 @@ sequenceDiagram
 ```
 
 1. **Idle State**: ESP32 onboard LED pulses gently in **Cyan**.
-2. **Item Presented**: Camera streams frames to the server; type `0` in REPL $\rightarrow$ onboard LED turns **Blue** (Plastic).
-3. **Item Dropped**: Drop the bottle through the chute $\rightarrow$ IR break-beam triggers:
+2. **Item Presented**: Camera streams frames to the server; type `0` in REPL -> onboard LED turns **Blue** (Plastic).
+3. **Item Dropped**: Drop the bottle through the chute -> IR break-beam triggers:
    - Onboard LED flashes bright white/green confirmation for 600 ms.
    - Pings `/internal/verify-drop` on Edric's server.
    - Because `DEMO_PITCH_SMART_SORT = true` is set in [config.h](file:///home/Fabio/project/univ/SortSense/SortSense-Hardware/include/config.h#L160), the drop is automatically attributed to the last AI classification (Bin 0: Plastic), guaranteeing **100% demo sort accuracy**.
@@ -274,11 +274,11 @@ sequenceDiagram
 
 ---
 
-## 6. Troubleshooting Cheat Sheet
+## 7. Troubleshooting Cheat Sheet
 
 | Symptom | Probable Cause | Quick Fix |
 |---|---|---|
-| **ToF distance stuck at ~80 mm (89% full)** | Protective film still on lens, or bin wall in 25° FoV | Peel off protective film from sensor chip. Angle sensor away from bin walls. |
+| **ToF distance stuck at ~80 mm (89% full)** | Protective film still on lens, or bin wall in 25 deg FoV | Peel off protective film from sensor chip. Angle sensor away from bin walls. |
 | **I2C errors / ToF initialization failure** | SCL wired to GPIO 48 instead of GPIO 21 | Move ToF SCL wire to **GPIO 21**. |
 | **IR sensor never triggers drop** | Potentiometer threshold out of tune | Turn blue trimpot counter-clockwise until Signal LED goes OFF when clear. |
 | **Camera stream image is upside down** | Orientation inversion flag | Check `CAM_VFLIP = 1` in [config.h](file:///home/Fabio/project/univ/SortSense/SortSense-Hardware/include/config.h#L98). |
