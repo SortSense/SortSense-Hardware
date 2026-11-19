@@ -127,7 +127,10 @@ constexpr uint8_t PIN_IR_BEAM_2 = 38; ///< IR Beam Sensor 2 input
 constexpr uint8_t PIN_IR_BEAM_3 = 39; ///< IR Beam Sensor 3 input
 constexpr uint8_t PIN_IR_BEAM_4 = 40; ///< IR Beam Sensor 4 input
 
-constexpr uint8_t IR_BEAM_COUNT = 4; ///< Total number of IR sensors
+constexpr uint8_t IR_BEAM_COUNT = 4;     ///< Total number of IR sensors
+constexpr uint32_t IR_DEBOUNCE_MS = 500; ///< 500ms software debounce per bin
+constexpr const char *IR_VERIFY_DROP_PATH =
+    "/internal/verify-drop"; ///< HTTP drop verification endpoint
 
 // --- 4. 12x WS2812B Addressable RGB LED Status Indicator Strip ---
 constexpr uint8_t PIN_WS2812B_DATA = 21;  ///< WS2812B single-wire NRZ data pin
