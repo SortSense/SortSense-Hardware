@@ -61,15 +61,15 @@ static void onWebSocketEvent(WStype_t type, uint8_t *payload, size_t length) {
         s_classificationCallback(binIndex, category, confidence);
       }
     } else {
-      Serial.printf("[WS] Received unparseable JSON (len=%u)\n",
-                    static_cast<uint32_t>(length));
+      Serial.printf("[WS] Received unparseable JSON (len=%lu)\n",
+                    static_cast<unsigned long>(length));
     }
     break;
   }
 
   case WStype_BIN:
-    Serial.printf("[WS] Received unexpected binary payload (%u bytes)\n",
-                  static_cast<uint32_t>(length));
+    Serial.printf("[WS] Received unexpected binary payload (%lu bytes)\n",
+                  static_cast<unsigned long>(length));
     break;
 
   case WStype_ERROR:
