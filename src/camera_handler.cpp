@@ -83,13 +83,7 @@ esp_err_t camera_init(void) {
            static_cast<int32_t>(config.frame_size), CAM_JPEG_QUALITY,
            static_cast<uint32_t>(config.fb_count));
 
-  esp_err_t err = esp_camera_init(&config);
-  if (err != ESP_OK && config.pixel_format == PIXFORMAT_JPEG) {
-    ESP_LOGW(TAG, "Hardware JPEG init failed (0x%x). Retrying with YUV422...",
-             err);
-    config.pixel_format = PIXFORMAT_YUV422;
-    err = esp_camera_init(&config);
-  }
+  const esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
     ESP_LOGE(TAG, "esp_camera_init failed: 0x%x (%s)", err,
              esp_err_to_name(err));
@@ -104,12 +98,11 @@ esp_err_t camera_init(void) {
              s->id.PID,
              static_cast<uint16_t>((static_cast<uint16_t>(s->id.MIDH) << 8) |
                                    s->id.MIDL));
-    // Default orientation: Invert vertical flip so image is right-side up
     if (s->set_vflip != nullptr) {
-      s->set_vflip(s, 1);
+      s->set_vflip(s, CAM_VFLIP);
     }
     if (s->set_hmirror != nullptr) {
-      s->set_hmirror(s, 0);
+      s->set_hmirror(s, CAM_HMIRROR);
     }
   } else {
     ESP_LOGW(TAG, "Camera driver initialized, but sensor_t pointer could not "

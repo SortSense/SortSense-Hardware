@@ -99,6 +99,10 @@ void test_init_success_and_config_mapping(void) {
   TEST_ASSERT_EQUAL(CAM_FB_LOCATION, cfg.fb_location);
   TEST_ASSERT_EQUAL(CAM_GRAB_MODE, cfg.grab_mode);
   TEST_ASSERT_EQUAL_INT(-1, cfg.sccb_i2c_port);
+
+  // Inspect sensor orientation configuration
+  TEST_ASSERT_EQUAL_INT(CAM_VFLIP, mock_sensor.vflip);
+  TEST_ASSERT_EQUAL_INT(CAM_HMIRROR, mock_sensor.hmirror);
 }
 
 /**

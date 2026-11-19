@@ -94,6 +94,12 @@ constexpr camera_fb_location_t CAM_FB_LOCATION = CAMERA_FB_IN_PSRAM;
 /// Frame grab mode: Always fetch the latest completed DMA frame
 constexpr camera_grab_mode_t CAM_GRAB_MODE = CAMERA_GRAB_LATEST;
 
+/// Vertical image flip (1 = invert vertical orientation, 0 = normal)
+constexpr int8_t CAM_VFLIP = 1;
+
+/// Horizontal image mirror (1 = mirror horizontally, 0 = normal)
+constexpr int8_t CAM_HMIRROR = 0;
+
 // =============================================================================
 // PERIPHERAL PIN ALLOCATION & RESERVATIONS (SORTSENSE SMART SYSTEM)
 // Mathematical verification: Zero overlap with Camera, PSRAM, Flash, or
