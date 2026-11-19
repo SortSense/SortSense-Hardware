@@ -85,4 +85,3 @@ bool network_parse_classification_json(const uint8_t *payload, size_t length,
 #ifdef __cplusplus
 }
 #endif
-

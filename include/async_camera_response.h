@@ -82,8 +82,7 @@ private:
   SemaphoreHandle_t _mutex;
 
 public:
-  AsyncJpegResponse(uint8_t *buf, size_t len,
-                    SemaphoreHandle_t mutex = nullptr)
+  AsyncJpegResponse(uint8_t *buf, size_t len, SemaphoreHandle_t mutex = nullptr)
       : AsyncAbstractResponse(nullptr), _buf(buf), _readLength(0),
         _mutex(mutex) {
     _code = 200;

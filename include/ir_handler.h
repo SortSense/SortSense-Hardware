@@ -54,4 +54,3 @@ bool ir_send_verify_drop(int binIndex);
 #ifdef __cplusplus
 }
 #endif
-

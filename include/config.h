@@ -112,14 +112,34 @@ constexpr uint8_t PIN_I2C_SCL = 48;          ///< I2C Clock line
 constexpr uint32_t I2C_BUS_FREQ_HZ = 400000; ///< 400 kHz Fast-Mode bus clock
 
 // --- 2. 4x VL53L0X Digital Output XSHUT Shutdown Pins ---
-constexpr uint8_t PIN_TOF_XSHUT_1 = 1;  ///< ToF Sensor 1 XSHUT (Chute 1)
-constexpr uint8_t PIN_TOF_XSHUT_2 = 2;  ///< ToF Sensor 2 XSHUT (Chute 2)
-constexpr uint8_t PIN_TOF_XSHUT_3 = 41; ///< ToF Sensor 3 XSHUT (Chute 3)
-constexpr uint8_t PIN_TOF_XSHUT_4 = 42; ///< ToF Sensor 4 XSHUT (Chute 4)
+constexpr uint8_t PIN_TOF_XSHUT_1 =
+    1; ///< ToF Sensor 1 XSHUT (Chute 1: Plastic)
+constexpr uint8_t PIN_TOF_XSHUT_2 = 2;  ///< ToF Sensor 2 XSHUT (Chute 2: Paper)
+constexpr uint8_t PIN_TOF_XSHUT_3 = 41; ///< ToF Sensor 3 XSHUT (Chute 3: Metal)
+constexpr uint8_t PIN_TOF_XSHUT_4 =
+    42; ///< ToF Sensor 4 XSHUT (Chute 4: General)
 
 constexpr uint8_t TOF_SENSOR_COUNT = 4; ///< Total number of ToF sensors
 constexpr uint8_t TOF_I2C_ADDR_BASE =
     0x30; ///< Base address (assigned 0x30..0x33)
+
+/// Distance when compartment is completely empty in mm (0% fill level)
+constexpr uint16_t BIN_EMPTY_MM = 400;
+
+/// Distance when compartment is full in mm (100% fill level)
+constexpr uint16_t BIN_FULL_MM = 50;
+
+/// Periodic fill level telemetry reporting interval (milliseconds)
+constexpr uint32_t TOF_REPORT_INTERVAL_MS = 60000;
+
+/// VL53L0X I2C communication and ranging timeout (milliseconds)
+constexpr uint32_t TOF_TIMEOUT_MS = 500;
+
+/// VL53L0X measurement timing budget in microseconds (33ms)
+constexpr uint32_t TOF_TIMING_BUDGET_US = 33000;
+
+/// Telemetry HTTP POST endpoint path
+constexpr const char *TOF_TELEMETRY_PATH = "/api/telemetry/fill-levels";
 
 // --- 3. 4x LM393 IR Break-Beam Sensor Inputs (Interrupt Capable) ---
 constexpr uint8_t PIN_IR_BEAM_1 = 14; ///< IR Beam Sensor 1 input

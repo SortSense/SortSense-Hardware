@@ -106,7 +106,14 @@ async def fill_levels_handler(request):
         data = await request.json()
         station_id = data.get("station_id", "UNKNOWN")
         levels = data.get("fill_levels", {})
-        logger.info(f"📊 [TELEMETRY] Station: {station_id} Fill Levels: {levels}")
+
+        lines = [f"📊 [TELEMETRY] Station: {station_id} Compartment Fill Levels:"]
+        for bin_name in ["plastic", "paper", "metal", "general"]:
+            pct = int(levels.get(bin_name, 0))
+            filled = min(10, max(0, int(round(pct / 10.0))))
+            bar = "#" * filled + "-" * (10 - filled)
+            lines.append(f"    • {bin_name.capitalize():<8}: [{bar}] {pct:3d}%")
+        logger.info("\n" + "\n".join(lines))
         return web.json_response({"status": "ok", "received": True})
     except Exception as e:
         logger.warning(f"Failed to process fill-levels: {e}")
