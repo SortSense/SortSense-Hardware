@@ -6,3 +6,6 @@
 *.sortsense
 compile_commands.json
 teamwork
+__pycache__/
+*.pyc
+latest.jpg
