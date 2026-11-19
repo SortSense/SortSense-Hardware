@@ -78,9 +78,8 @@ constexpr uint32_t CAM_XCLK_FREQ_HZ = 20000000;
 /// Frame resolution: VGA (640x480)
 constexpr framesize_t CAM_FRAME_SIZE = FRAMESIZE_VGA;
 
-/// Image pixel format: Native YUV422 from OV5640 (converted to JPEG via
-/// frame2jpg)
-constexpr pixformat_t CAM_PIXEL_FORMAT = PIXFORMAT_YUV422;
+/// Image pixel format: Hardware JPEG compression from OV5640 DSP engine
+constexpr pixformat_t CAM_PIXEL_FORMAT = PIXFORMAT_JPEG;
 
 /// JPEG compression quality (0-63, lower = higher quality, 12 requested)
 constexpr uint8_t CAM_JPEG_QUALITY = 12;
@@ -91,8 +90,9 @@ constexpr size_t CAM_FB_COUNT = 2;
 /// Frame buffer allocation location: 8MB Octal PSRAM
 constexpr camera_fb_location_t CAM_FB_LOCATION = CAMERA_FB_IN_PSRAM;
 
-/// Frame grab mode: Always fetch the latest completed DMA frame
-constexpr camera_grab_mode_t CAM_GRAB_MODE = CAMERA_GRAB_LATEST;
+/// Frame grab mode: Fetch frame when buffer is empty to avoid DMA queue
+/// overflow during network spikes
+constexpr camera_grab_mode_t CAM_GRAB_MODE = CAMERA_GRAB_WHEN_EMPTY;
 
 // =============================================================================
 // PERIPHERAL PIN ALLOCATION & RESERVATIONS (SORTSENSE SMART SYSTEM)

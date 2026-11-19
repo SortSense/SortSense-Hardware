@@ -83,7 +83,13 @@ esp_err_t camera_init(void) {
            static_cast<int32_t>(config.frame_size), CAM_JPEG_QUALITY,
            static_cast<uint32_t>(config.fb_count));
 
-  const esp_err_t err = esp_camera_init(&config);
+  esp_err_t err = esp_camera_init(&config);
+  if (err != ESP_OK && config.pixel_format == PIXFORMAT_JPEG) {
+    ESP_LOGW(TAG, "Hardware JPEG init failed (0x%x). Retrying with YUV422...",
+             err);
+    config.pixel_format = PIXFORMAT_YUV422;
+    err = esp_camera_init(&config);
+  }
   if (err != ESP_OK) {
     ESP_LOGE(TAG, "esp_camera_init failed: 0x%x (%s)", err,
              esp_err_to_name(err));

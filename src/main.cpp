@@ -253,14 +253,30 @@ void setupServerRoutes(void) {
 
     g_frameCount++;
 
-    // 2. Perform fast JPEG compression
+    // Format handling: Direct Hardware JPEG vs Software Compression fallback
+    if (fb->format == PIXFORMAT_JPEG) {
+      // 1. HARDWARE JPEG: Zero-copy DMA streaming via AsyncCameraResponse
+      // (Automatically releases frame buffer and cameraMutex when HTTP stream
+      // completes)
+      AsyncCameraResponse *response =
+          new (std::nothrow) AsyncCameraResponse(fb, cameraMutex);
+      if (response == nullptr) {
+        camera_release_frame(fb);
+        xSemaphoreGive(cameraMutex);
+        request->send(500, "text/plain", "Failed to allocate HTTP response\n");
+        return;
+      }
+      response->addHeader("Access-Control-Allow-Origin", "*");
+      response->addHeader("Cache-Control",
+                          "no-cache, no-store, must-revalidate");
+      request->send(response);
+      return;
+    }
+
+    // 2. RAW FALLBACK (YUV422 / RGB565): Software JPEG conversion via frame2jpg
     uint8_t *jpg_buf = nullptr;
     size_t jpg_len = 0;
     bool ok = frame2jpg(fb, g_jpegQuality, &jpg_buf, &jpg_len);
-
-    // 3. CRITICAL PERFORMANCE OPTIMIZATION: Return hardware DMA buffer and
-    // release cameraMutex IMMEDIATELY after compression.
-    // DO NOT hold cameraMutex during TCP network transmission!
     camera_release_frame(fb);
     xSemaphoreGive(cameraMutex);
 
@@ -269,8 +285,6 @@ void setupServerRoutes(void) {
       return;
     }
 
-    // 4. Wrap independent heap buffer in AsyncJpegResponse (frees buffer on
-    // finish)
     AsyncJpegResponse *response =
         new (std::nothrow) AsyncJpegResponse(jpg_buf, jpg_len);
     if (response == nullptr) {
@@ -432,30 +446,8 @@ void setup(void) {
     }
   }
 
-  // 2. Initialize Camera Driver via modular camera_handler interface (Clean
-  // YUV422)
-  Serial.println("[Init] Initializing OV5640 Camera Driver...");
-  esp_err_t camErr = camera_init();
-  if (camErr != ESP_OK) {
-    Serial.printf("[WARN] Camera initialization failed (0x%x). Operating in "
-                  "degraded mode.\n",
-                  camErr);
-  } else {
-    Serial.println("[Init] OV5640 Camera initialized successfully.");
-    // Set hardware orientation defaults
-    sensor_t *s = esp_camera_sensor_get();
-    if (s != nullptr) {
-      if (s->set_vflip != nullptr)
-        s->set_vflip(s, g_vflip);
-      if (s->set_hmirror != nullptr)
-        s->set_hmirror(s, g_hmirror);
-    }
-  }
-
-  // 3. Configure HTTP routes on AsyncWebServer instance
-  setupServerRoutes();
-
-  // 4. Configure WiFiManager in non-blocking mode
+  // 2. Configure WiFiManager in non-blocking mode FIRST
+  // (Ensures network association does not contend with camera DMA interrupts)
   Serial.println("[Init] Initializing WiFiManager (non-blocking)...");
   wm.setConfigPortalBlocking(false);
   wm.setConfigPortalTimeout(WIFI_PORTAL_TIMEOUT_SEC);
@@ -472,6 +464,38 @@ void setup(void) {
     Serial.println("[WiFi] Starting non-blocking connection / captive portal "
                    "'SortSense-AP'...");
   }
+
+  // 3. Initialize Camera Driver via modular camera_handler interface
+  Serial.println("[Init] Initializing OV5640 Camera Driver...");
+  esp_err_t camErr = camera_init();
+  if (camErr != ESP_OK) {
+    Serial.printf("[WARN] Camera initialization failed (0x%x). Operating in "
+                  "degraded mode.\n",
+                  camErr);
+  } else {
+    Serial.println("[Init] OV5640 Camera initialized successfully.");
+    // Set hardware orientation defaults
+    sensor_t *s = esp_camera_sensor_get();
+    if (s != nullptr) {
+      if (s->set_vflip != nullptr)
+        s->set_vflip(s, g_vflip);
+      if (s->set_hmirror != nullptr)
+        s->set_hmirror(s, g_hmirror);
+    }
+
+    // Warm-up flush: Clear sensor PLL sync & DMA buffers
+    delay(200);
+    for (int i = 0; i < 4; ++i) {
+      camera_fb_t *dummy = camera_acquire_frame();
+      if (dummy != nullptr) {
+        camera_release_frame(dummy);
+      }
+      delay(30);
+    }
+  }
+
+  // 4. Configure HTTP routes on AsyncWebServer instance
+  setupServerRoutes();
 
   // 5. Pin FreeRTOS tasks to specific processor cores
   BaseType_t netTaskStatus = xTaskCreatePinnedToCore(
@@ -503,34 +527,46 @@ void loop(void) {
           xSemaphoreTake(cameraMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
         camera_fb_t *fb = camera_acquire_frame();
         if (fb != nullptr) {
-          uint8_t *jpg_buf = nullptr;
-          size_t jpg_len = 0;
-          bool ok = frame2jpg(fb, 75, &jpg_buf, &jpg_len);
-          camera_release_frame(fb);
-          xSemaphoreGive(cameraMutex); // Release lock immediately
+          uint8_t *send_buf = nullptr;
+          size_t send_len = 0;
+          bool must_free = false;
 
-          if (ok && jpg_buf != nullptr) {
+          if (fb->format == PIXFORMAT_JPEG) {
+            send_buf = fb->buf;
+            send_len = fb->len;
+          } else {
+            bool ok = frame2jpg(fb, 75, &send_buf, &send_len);
+            if (ok) {
+              must_free = true;
+            }
+          }
+
+          if (send_buf != nullptr && send_len > 0) {
             Serial.println("---BEGIN_PHOTO---");
             static const char b64_chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh"
                                             "ijklmnopqrstuvwxyz0123456789+/";
-            for (size_t i = 0; i < jpg_len; i += 3) {
-              uint32_t a = (i < jpg_len) ? jpg_buf[i] : 0;
-              uint32_t b = (i + 1 < jpg_len) ? jpg_buf[i + 1] : 0;
-              uint32_t c_byte = (i + 2 < jpg_len) ? jpg_buf[i + 2] : 0;
+            for (size_t i = 0; i < send_len; i += 3) {
+              uint32_t a = (i < send_len) ? send_buf[i] : 0;
+              uint32_t b = (i + 1 < send_len) ? send_buf[i + 1] : 0;
+              uint32_t c_byte = (i + 2 < send_len) ? send_buf[i + 2] : 0;
               uint32_t triple = (a << 16) + (b << 8) + c_byte;
               Serial.print(b64_chars[(triple >> 18) & 0x3F]);
               Serial.print(b64_chars[(triple >> 12) & 0x3F]);
-              Serial.print((i + 1 < jpg_len) ? b64_chars[(triple >> 6) & 0x3F]
-                                             : '=');
-              Serial.print((i + 2 < jpg_len) ? b64_chars[triple & 0x3F] : '=');
+              Serial.print((i + 1 < send_len) ? b64_chars[(triple >> 6) & 0x3F]
+                                              : '=');
+              Serial.print((i + 2 < send_len) ? b64_chars[triple & 0x3F] : '=');
               if ((i / 3) % 18 == 17)
                 Serial.println();
             }
             Serial.println("\n---END_PHOTO---");
-            free(jpg_buf);
+            if (must_free) {
+              free(send_buf);
+            }
           } else {
-            Serial.println("[ERROR] frame2jpg failed!");
+            Serial.println("[ERROR] JPEG encoding failed!");
           }
+          camera_release_frame(fb);
+          xSemaphoreGive(cameraMutex);
         } else {
           xSemaphoreGive(cameraMutex);
           Serial.println("[ERROR] camera_acquire_frame failed!");
