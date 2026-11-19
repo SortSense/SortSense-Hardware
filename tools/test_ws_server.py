@@ -8,11 +8,11 @@ Provides:
      - Saves most recent frame to latest.jpg for live inspection
      - Logs frame size and FPS
      - Broadcasts AI classification inferences to set ESP32 onboard RGB LED:
-         • Bin 0 (Plastic) -> Blue
-         • Bin 1 (Paper)   -> Green
-         • Bin 2 (Metal)   -> Yellow
-         • Bin 3 (General) -> White
-         • Bin -1 (None)   -> Soft Cyan Breathing
+         - Bin 0 (Plastic) -> Blue
+         - Bin 1 (Paper)   -> Green
+         - Bin 2 (Metal)   -> Yellow
+         - Bin 3 (General) -> White
+         - Bin -1 (None)   -> Soft Cyan Breathing
   2. Drop Verification HTTP POST Endpoint: http://<HOST>:<PORT>/internal/verify-drop
      - Receives {"station_id": "ST-001", "bin_index": 0}
      - Logs real-time trash drop verification from LM393 IR break-beam sensors
@@ -127,7 +127,7 @@ async def broadcast_classification(msg: dict):
 
     color_desc = BIN_COLORS.get(msg["bin_index"], "UNKNOWN")
     logger.info(
-        f"🤖 [AI -> ESP32] Sent Bin {msg['bin_index']} ({msg['category'].upper()}) | "
+        f"[AI -> ESP32] Sent Bin {msg['bin_index']} ({msg['category'].upper()}) | "
         f"LED Target: {color_desc} (Active Clients: {len(active_ws_clients)})"
     )
 
@@ -161,7 +161,7 @@ async def verify_drop_handler(request):
         bin_label = BIN_NAMES[bin_index] if 0 <= bin_index < len(BIN_NAMES) else "UNKNOWN"
 
         logger.info(
-            f"🎯 [DROP VERIFIED] Station: {station_id} -> "
+            f"[DROP VERIFIED] Station: {station_id} -> "
             f"Bin {bin_index} ({bin_label}) Drop confirmed via IR interrupt!"
         )
         return web.json_response({
@@ -185,12 +185,12 @@ async def fill_levels_handler(request):
         station_id = data.get("station_id", "UNKNOWN")
         levels = data.get("fill_levels", {})
 
-        lines = [f"📊 [TELEMETRY] Station: {station_id} Compartment Fill Levels:"]
+        lines = [f"[TELEMETRY] Station: {station_id} Compartment Fill Levels:"]
         for bin_name in ["plastic", "paper", "metal", "general"]:
             pct = int(levels.get(bin_name, 0))
             filled = min(10, max(0, int(round(pct / 10.0))))
             bar = "#" * filled + "-" * (10 - filled)
-            lines.append(f"    • {bin_name.capitalize():<8}: [{bar}] {pct:3d}%")
+            lines.append(f"    - {bin_name.capitalize():<8}: [{bar}] {pct:3d}%")
         logger.info("\n" + "\n".join(lines))
         return web.json_response({"status": "ok", "received": True})
     except Exception as e:
