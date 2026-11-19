@@ -25,6 +25,7 @@
 #include "async_camera_response.h"
 #include "camera_handler.h"
 #include "config.h"
+#include "network_handler.h"
 
 // =============================================================================
 // FREERTOS CONFIGURATION & SYSTEM CONSTANTS
@@ -163,6 +164,19 @@ static const char INDEX_HTML[] PROGMEM = R"rawliteral(
 )rawliteral";
 
 // =============================================================================
+// AI CLASSIFICATION HOOK (PHASE 2 -> PHASE 3 HANDOFF)
+// =============================================================================
+void onClassificationReceived(int binIndex, const char *category,
+                              float confidence) {
+  // Hook for Phase 3: WS2812B LED status indication
+  // e.g. trigger corresponding bin LEDs (0: plastic, 1: paper, 2: metal, 3:
+  // general)
+  (void)binIndex;
+  (void)category;
+  (void)confidence;
+}
+
+// =============================================================================
 // HTTP ROUTE DEFINITIONS
 // =============================================================================
 /**
@@ -240,18 +254,21 @@ void setupServerRoutes(void) {
   // Route 3: GET /status - Return JSON system telemetry and heap diagnostics
   // -------------------------------------------------------------------------
   server.on("/status", HTTP_GET, [](AsyncWebServerRequest *request) {
-    char statusJson[256];
-    snprintf(statusJson, sizeof(statusJson),
-             "{\"status\":\"ok\",\"ip\":\"%s\",\"wifi_connected\":%s,\"camera_"
-             "initialized\":%s,\"frame_count\":%u,\"free_heap\":%u,\"free_"
-             "psram\":%u,\"uptime_ms\":%lu}",
-             (WiFi.status() == WL_CONNECTED) ? WiFi.localIP().toString().c_str()
-                                             : "0.0.0.0",
-             (WiFi.status() == WL_CONNECTED) ? "true" : "false",
-             is_camera_initialized() ? "true" : "false", g_frameCount,
-             static_cast<uint32_t>(ESP.getFreeHeap()),
-             static_cast<uint32_t>(ESP.getFreePsram()),
-             static_cast<unsigned long>(millis()));
+    char statusJson[280];
+    snprintf(
+        statusJson, sizeof(statusJson),
+        "{\"status\":\"ok\",\"ip\":\"%s\",\"wifi_connected\":%s,\"ws_"
+        "connected\":%s,"
+        "\"camera_initialized\":%s,\"frame_count\":%u,\"free_heap\":%u,\"free_"
+        "psram\":%u,\"uptime_ms\":%lu}",
+        (WiFi.status() == WL_CONNECTED) ? WiFi.localIP().toString().c_str()
+                                        : "0.0.0.0",
+        (WiFi.status() == WL_CONNECTED) ? "true" : "false",
+        network_is_connected() ? "true" : "false",
+        is_camera_initialized() ? "true" : "false", g_frameCount,
+        static_cast<uint32_t>(ESP.getFreeHeap()),
+        static_cast<uint32_t>(ESP.getFreePsram()),
+        static_cast<unsigned long>(millis()));
     request->send(200, "application/json", statusJson);
   });
 
@@ -300,6 +317,11 @@ void networkTask(void *pvParameters) {
     else if (!currentConnectedState && previousConnectedState) {
       previousConnectedState = false;
       Serial.println("[WiFi] Connection lost. Attempting reconnection...");
+    }
+
+    // Service WebSocket client events when Wi-Fi is connected
+    if (currentConnectedState) {
+      network_loop();
     }
 
     // Cooperative yield to reset Core 0 Task Watchdog Timer (TWDT)
@@ -374,7 +396,16 @@ void setup(void) {
                    "'SortSense-AP'...");
   }
 
-  // 5. Pin FreeRTOS tasks to specific processor cores
+  // 5. Initialize WebSocket vision client & register AI classification callback
+  Serial.printf("[Init] Initializing WebSocket client for %s:%u%s...\n",
+                WS_HOST, WS_PORT, WS_PATH);
+  esp_err_t netErr = network_init(WS_HOST, WS_PORT, WS_PATH);
+  if (netErr != ESP_OK) {
+    Serial.printf("[WARN] network_init failed: 0x%x\n", netErr);
+  }
+  network_register_classification_callback(onClassificationReceived);
+
+  // 6. Pin FreeRTOS tasks to specific processor cores
   BaseType_t netTaskStatus = xTaskCreatePinnedToCore(
       networkTask, "NetworkTask", TASK_STACK_NETWORK, nullptr,
       TASK_PRIORITY_NETWORK, &networkTaskHandle, CORE_0_NETWORK);
@@ -396,7 +427,38 @@ void setup(void) {
 }
 
 void loop(void) {
-  // High-speed Serial photo grab listener (compatible with tools/grab_test.py)
+  // 1. Non-blocking frame streaming to AI server over WebSocket (Phase 2)
+  static unsigned long lastStreamTime = 0;
+  const unsigned long currentMillis = millis();
+
+  if (currentMillis - lastStreamTime >= FRAME_INTERVAL_MS) {
+    lastStreamTime = currentMillis;
+
+    if (network_is_connected()) {
+      if (cameraMutex != nullptr &&
+          xSemaphoreTake(cameraMutex, CAMERA_MUTEX_TIMEOUT) == pdTRUE) {
+        camera_fb_t *fb = camera_acquire_frame();
+        if (fb != nullptr) {
+          if (fb->format == PIXFORMAT_JPEG) {
+            network_send_frame(fb->buf, fb->len);
+          } else {
+            uint8_t *jpg_buf = nullptr;
+            size_t jpg_len = 0;
+            if (frame2jpg(fb, CAM_JPEG_QUALITY, &jpg_buf, &jpg_len) &&
+                jpg_buf != nullptr) {
+              network_send_frame(jpg_buf, jpg_len);
+              free(jpg_buf);
+            }
+          }
+          camera_release_frame(fb);
+        }
+        xSemaphoreGive(cameraMutex);
+      }
+    }
+  }
+
+  // 2. High-speed Serial photo grab listener (compatible with
+  // tools/grab_test.py)
   if (Serial.available()) {
     char c = Serial.read();
     if (c == 'c' || c == 's') {

@@ -238,6 +238,32 @@ void test_fixed_width_type_safety(void) {
   TEST_ASSERT_EQUAL_UINT32(sizeof(size_t), sizeof(CAM_FB_COUNT));
 }
 
+/**
+ * TC_CONF_15: Verify WebSocket vision streaming parameters.
+ */
+void test_websocket_parameters_validity(void) {
+  TEST_ASSERT_EQUAL_STRING("ST-001", STATION_ID);
+  TEST_ASSERT_EQUAL_STRING("192.168.1.100", WS_HOST);
+  TEST_ASSERT_EQUAL_UINT16(8000, WS_PORT);
+  TEST_ASSERT_EQUAL_STRING("/ws/vision", WS_PATH);
+  TEST_ASSERT_EQUAL_UINT32(500, FRAME_INTERVAL_MS);
+  TEST_ASSERT_EQUAL_UINT32(3000, WS_RECONNECT_INTERVAL_MS);
+  TEST_ASSERT_EQUAL_UINT32(15000, WS_HEARTBEAT_INTERVAL_MS);
+  TEST_ASSERT_EQUAL_UINT32(3000, WS_HEARTBEAT_MIN_INTERVAL_MS);
+  TEST_ASSERT_EQUAL_UINT8(2, WS_HEARTBEAT_MAX_MISSES);
+
+  TEST_ASSERT_EQUAL_INT8(0, BIN_INDEX_PLASTIC);
+  TEST_ASSERT_EQUAL_INT8(1, BIN_INDEX_PAPER);
+  TEST_ASSERT_EQUAL_INT8(2, BIN_INDEX_METAL);
+  TEST_ASSERT_EQUAL_INT8(3, BIN_INDEX_GENERAL);
+  TEST_ASSERT_EQUAL_INT8(-1, BIN_INDEX_NONE);
+
+  TEST_ASSERT_EQUAL_STRING("plastic", BIN_NAME_PLASTIC);
+  TEST_ASSERT_EQUAL_STRING("paper", BIN_NAME_PAPER);
+  TEST_ASSERT_EQUAL_STRING("metal", BIN_NAME_METAL);
+  TEST_ASSERT_EQUAL_STRING("general", BIN_NAME_GENERAL);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_pin_collision_none);
@@ -254,5 +280,6 @@ int main(void) {
   RUN_TEST(test_peripheral_constants_validity);
   RUN_TEST(test_system_and_freertos_constants);
   RUN_TEST(test_fixed_width_type_safety);
+  RUN_TEST(test_websocket_parameters_validity);
   return UNITY_END();
 }

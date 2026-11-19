@@ -161,3 +161,46 @@ constexpr uint32_t WIFI_PORTAL_TIMEOUT_SEC = 180;
 
 /// Inter-core camera mutex acquisition timeout (milliseconds)
 constexpr uint32_t CAMERA_MUTEX_TIMEOUT_MS = 1000;
+
+// =============================================================================
+// WEBSOCKET VISION STREAMING & AI BACKEND (PHASE 2)
+// =============================================================================
+
+/// Station identifier for LAN server and cloud telemetry
+constexpr const char *STATION_ID = "ST-001";
+
+/// Local LAN AI Server IP address or hostname
+constexpr const char *WS_HOST = "192.168.1.100";
+
+/// Local LAN AI Server WebSocket port
+constexpr uint16_t WS_PORT = 8000;
+
+/// WebSocket endpoint path for binary vision streaming
+constexpr const char *WS_PATH = "/ws/vision";
+
+/// Vision frame streaming transmission interval (milliseconds)
+constexpr uint32_t FRAME_INTERVAL_MS = 500;
+
+/// WebSocket automatic reconnect interval (milliseconds)
+constexpr uint32_t WS_RECONNECT_INTERVAL_MS = 3000;
+
+/// WebSocket ping/pong heartbeat interval (milliseconds)
+constexpr uint32_t WS_HEARTBEAT_INTERVAL_MS = 15000;
+
+/// WebSocket minimum heartbeat ping interval (milliseconds)
+constexpr uint32_t WS_HEARTBEAT_MIN_INTERVAL_MS = 3000;
+
+/// WebSocket maximum missed heartbeats before disconnecting
+constexpr uint8_t WS_HEARTBEAT_MAX_MISSES = 2;
+
+// Standardized Waste Compartment Bins (0..3)
+constexpr int8_t BIN_INDEX_PLASTIC = 0;
+constexpr int8_t BIN_INDEX_PAPER = 1;
+constexpr int8_t BIN_INDEX_METAL = 2;
+constexpr int8_t BIN_INDEX_GENERAL = 3;
+constexpr int8_t BIN_INDEX_NONE = -1;
+
+constexpr const char *BIN_NAME_PLASTIC = "plastic";
+constexpr const char *BIN_NAME_PAPER = "paper";
+constexpr const char *BIN_NAME_METAL = "metal";
+constexpr const char *BIN_NAME_GENERAL = "general";
