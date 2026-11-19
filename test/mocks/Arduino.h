@@ -30,6 +30,18 @@ inline int mock_interrupt_modes[64] = {0};
 inline bool mock_psram_found_state = true;
 inline unsigned long mock_millis_val = 1000;
 
+inline uint8_t mock_neopixel_pin = 0;
+inline uint8_t mock_neopixel_r = 0;
+inline uint8_t mock_neopixel_g = 0;
+inline uint8_t mock_neopixel_b = 0;
+
+inline void neopixelWrite(uint8_t pin, uint8_t r, uint8_t g, uint8_t b) {
+  mock_neopixel_pin = pin;
+  mock_neopixel_r = r;
+  mock_neopixel_g = g;
+  mock_neopixel_b = b;
+}
+
 inline void mock_set_psram_found(bool found) { mock_psram_found_state = found; }
 inline bool psramFound() { return mock_psram_found_state; }
 
@@ -52,6 +64,10 @@ inline void mock_arduino_reset() {
   memset(mock_interrupt_modes, 0, sizeof(mock_interrupt_modes));
   mock_psram_found_state = true;
   mock_millis_val = 1000;
+  mock_neopixel_pin = 0;
+  mock_neopixel_r = 0;
+  mock_neopixel_g = 0;
+  mock_neopixel_b = 0;
 }
 
 inline void pinMode(uint8_t pin, uint8_t mode) {
