@@ -37,6 +37,7 @@ The SortSense firmware is partitioned into a modular, decoupled embedded archite
 | M2 | Final Verification, Adversarial Hardening & Acceptance | Pass 100% of E2E verification criteria: compilation check, pin collision script verification, static type check, and adversarial coverage hardening | M1 | DONE | All 4 acceptance criteria categories verified |
 | M3 | Production Unit Test Suite | Implement native test runner `[env:native]` in `platformio.ini`, hermetic mock headers in `test/mocks/`, decoupled `include/async_camera_response.h`, and comprehensive unit tests for `config.h`, `camera_handler`, and `async_camera_response` | M1, M2 | DONE | Gate PASS: 35/35 unit tests pass, firmware build pass, 6/6 mutations killed, 20/20 stress runs pass, CLEAN forensic audit |
 | M4 | Phase 2: Modular WebSocket Vision Streaming | Implement `network_handler` with `WebSocketsClient`, `ArduinoJson` 7 classification parser (`WS /ws/vision`), non-blocking FreeRTOS streaming loop, standalone Python server (`tools/test_ws_server.py`), and 12 native tests | M3 | DONE | Gate PASS: 47/47 unit tests pass, firmware build pass, standalone test server verified |
+| M5 | Phase 3B: LM393 IR Break-Beam Interrupts | Implement `ir_handler` for 4x LM393 sensors on free GPIOs (14, 38, 39, 40) with 500ms software debounce, FALLING edge interrupts, HTTP POST `/internal/verify-drop` telemetry, and 9 native unit tests | M4 | DONE | Gate PASS: 56/56 unit tests pass, firmware build pass, zero pin collisions |
 
 ## Interface Contracts
 
@@ -45,11 +46,18 @@ The SortSense firmware is partitioned into a modular, decoupled embedded archite
 - Camera DVP bits: `CAM_PIN_Y9 = 16`, `CAM_PIN_Y8 = 17`, `CAM_PIN_Y7 = 18`, `CAM_PIN_Y6 = 12`, `CAM_PIN_Y5 = 10`, `CAM_PIN_Y4 = 8`, `CAM_PIN_Y3 = 9`, `CAM_PIN_Y2 = 11` (`int8_t`)
 - Camera syncs: `CAM_PIN_VSYNC = 6`, `CAM_PIN_HREF = 7`, `CAM_PIN_PCLK = 13` (`int8_t`)
 - Camera settings: `CAM_XCLK_FREQ_HZ = 20000000` (`uint32_t`), `CAM_FRAME_SIZE = FRAMESIZE_HVGA`, `CAM_PIXEL_FORMAT = PIXFORMAT_YUV422`, `CAM_JPEG_QUALITY = 12` (`uint8_t`), `CAM_FB_COUNT = 2` (`uint8_t`), `CAM_FB_LOCATION = CAMERA_FB_IN_PSRAM`, `CAM_GRAB_MODE = CAMERA_GRAB_LATEST`, `CAM_VFLIP = 1` (`int8_t`), `CAM_HMIRROR = 0` (`int8_t`)
-- WebSocket vision settings: `STATION_ID = "ST-001"`, `WS_HOST = "192.168.1.100"`, `WS_PORT = 8000`, `WS_PATH = "/ws/vision"`, `FRAME_INTERVAL_MS = 500`, `WS_RECONNECT_INTERVAL_MS = 3000`, `WS_HEARTBEAT_INTERVAL_MS = 15000`
+- WebSocket vision settings: `STATION_ID = "ST-001"`, `WS_HOST = "192.168.0.66"`, `WS_PORT = 8000`, `WS_PATH = "/ws/vision"`, `FRAME_INTERVAL_MS = 500`, `WS_RECONNECT_INTERVAL_MS = 3000`, `WS_HEARTBEAT_INTERVAL_MS = 15000`
 - Reserved I2C bus: `PIN_I2C_SDA = 47`, `PIN_I2C_SCL = 48`, `I2C_BUS_FREQ_HZ = 400000` (`uint8_t`, `uint32_t`)
 - Reserved ToF XSHUT: `PIN_TOF_XSHUT_1 = 1`, `PIN_TOF_XSHUT_2 = 2`, `PIN_TOF_XSHUT_3 = 41`, `PIN_TOF_XSHUT_4 = 42` (`uint8_t`)
-- Reserved IR break-beam: `PIN_IR_BEAM_1 = 14`, `PIN_IR_BEAM_2 = 38`, `PIN_IR_BEAM_3 = 39`, `PIN_IR_BEAM_4 = 40` (`uint8_t`, falling-edge interrupt capable)
+- Reserved IR break-beam: `PIN_IR_BEAM_1 = 14`, `PIN_IR_BEAM_2 = 38`, `PIN_IR_BEAM_3 = 39`, `PIN_IR_BEAM_4 = 40` (`uint8_t`, falling-edge interrupt capable, 500ms software debounce)
 - Reserved WS2812B: `PIN_WS2812B_DATA = 21`, `WS2812B_NUM_LEDS = 12` (`uint8_t`)
+
+### `include/ir_handler.h`
+- `esp_err_t ir_init(void)`: Configures 4x LM393 pins as `INPUT_PULLUP` and attaches `FALLING` edge hardware interrupts with 500ms per-bin software debounce.
+- `esp_err_t ir_deinit(void)`: Detaches all hardware interrupts and clears pending drop flags.
+- `bool ir_poll_drop_event(int *outBinIndex)`: Non-blocking atomic poll for pending drop event captured by ISR. Returns `true` and clears flag if drop occurred.
+- `bool ir_is_beam_broken(uint8_t binIndex)`: Returns raw digital state (`LOW` = broken, `HIGH` = clear).
+- `bool ir_send_verify_drop(int binIndex)`: Transmits HTTP POST to `/internal/verify-drop` with payload `{"station_id": "ST-001", "bin_index": <0-3>}`.
 
 ### `include/network_handler.h`
 - `esp_err_t network_init(const char *host, uint16_t port, const char *path)`: Configures WebSocket client connection parameters, auto-reconnect interval, and heartbeat ping/pong.

@@ -25,6 +25,7 @@
 #include "async_camera_response.h"
 #include "camera_handler.h"
 #include "config.h"
+#include "ir_handler.h"
 #include "network_handler.h"
 
 // =============================================================================
@@ -405,7 +406,10 @@ void setup(void) {
   }
   network_register_classification_callback(onClassificationReceived);
 
-  // 6. Pin FreeRTOS tasks to specific processor cores
+  // 6. Initialize LM393 IR break-beam sensor interrupt subsystem (Phase 3B)
+  ir_init();
+
+  // 7. Pin FreeRTOS tasks to specific processor cores
   BaseType_t netTaskStatus = xTaskCreatePinnedToCore(
       networkTask, "NetworkTask", TASK_STACK_NETWORK, nullptr,
       TASK_PRIORITY_NETWORK, &networkTaskHandle, CORE_0_NETWORK);
@@ -457,7 +461,21 @@ void loop(void) {
     }
   }
 
-  // 2. High-speed Serial photo grab listener (compatible with
+  // 2. Poll for LM393 IR break-beam trash drop events (Phase 3B)
+  int droppedBin = -1;
+  if (ir_poll_drop_event(&droppedBin)) {
+    const char *binName = (droppedBin == BIN_INDEX_PLASTIC)   ? BIN_NAME_PLASTIC
+                          : (droppedBin == BIN_INDEX_PAPER)   ? BIN_NAME_PAPER
+                          : (droppedBin == BIN_INDEX_METAL)   ? BIN_NAME_METAL
+                          : (droppedBin == BIN_INDEX_GENERAL) ? BIN_NAME_GENERAL
+                                                              : "unknown";
+    Serial.printf(
+        "[IR SENSOR] *** TRASH DROP DETECTED *** Compartment: %d (%s)!\n",
+        droppedBin, binName);
+    ir_send_verify_drop(droppedBin);
+  }
+
+  // 3. High-speed Serial photo grab listener (compatible with
   // tools/grab_test.py)
   if (Serial.available()) {
     char c = Serial.read();
