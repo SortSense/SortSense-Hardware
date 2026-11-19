@@ -98,6 +98,13 @@ esp_err_t camera_init(void) {
              s->id.PID,
              static_cast<uint16_t>((static_cast<uint16_t>(s->id.MIDH) << 8) |
                                    s->id.MIDL));
+    // Default orientation: Invert vertical flip so image is right-side up
+    if (s->set_vflip != nullptr) {
+      s->set_vflip(s, 1);
+    }
+    if (s->set_hmirror != nullptr) {
+      s->set_hmirror(s, 0);
+    }
   } else {
     ESP_LOGW(TAG, "Camera driver initialized, but sensor_t pointer could not "
                   "be retrieved.");

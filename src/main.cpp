@@ -1,8 +1,8 @@
 /**
  * @file main.cpp
  * @brief System startup, dual-core FreeRTOS task scheduling, non-blocking
- * Wi-Fi, and asynchronous HTTP server endpoints for SortSense with OV5640
- * camera.
+ * Wi-Fi, and high-performance asynchronous HTTP streaming for SortSense with
+ * OV5640.
  * @target ESP32-S3 WROOM CAM (N16R8) with OV5640 Camera
  */
 
@@ -35,7 +35,7 @@ constexpr TickType_t CAMERA_MUTEX_TIMEOUT =
     pdMS_TO_TICKS(CAMERA_MUTEX_TIMEOUT_MS);
 
 // =============================================================================
-// GLOBAL INSTANCES & SYNCHRONIZATION PRIMITIVES
+// GLOBAL INSTANCES & RUNTIME CAMERA TUNING
 // =============================================================================
 static SemaphoreHandle_t cameraMutex = nullptr;
 static TaskHandle_t networkTaskHandle = nullptr;
@@ -46,8 +46,14 @@ static AsyncWebServer server(HTTP_SERVER_PORT);
 static bool isServerRunning = false;
 static uint32_t g_frameCount = 0;
 
+// Runtime adjustable camera parameters for high-FPS streaming & orientation
+static uint8_t g_jpegQuality = 60; // 55-65 gives ~2x faster compression than 75
+static framesize_t g_frameSize = FRAMESIZE_VGA;
+static int g_vflip = 1; // Invert vertical flip by default (OV5640 board mount)
+static int g_hmirror = 0;
+
 // =============================================================================
-// EMBEDDED WEB DASHBOARD (HTML / CSS / JS)
+// EMBEDDED WEB DASHBOARD (HTML / CSS / JS) WITH CONTROLS & HIGH-FPS PACING
 // =============================================================================
 static const char INDEX_HTML[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
@@ -63,50 +69,62 @@ static const char INDEX_HTML[] PROGMEM = R"rawliteral(
     .badge { display: inline-block; background: #059669; padding: 5px 14px; border-radius: 9999px; font-size: 13px; font-weight: 600; margin-bottom: 16px; }
     .container { background: #1e293b; max-width: 720px; margin: 0 auto; border-radius: 14px; padding: 18px; box-shadow: 0 10px 30px rgba(0,0,0,0.6); border: 1px solid #334155; }
     .feed-wrapper { position: relative; background: #000; border-radius: 10px; overflow: hidden; border: 2px solid #475569; min-height: 240px; display: flex; align-items: center; justify-content: center; }
-    img { width: 100%; max-width: 640px; height: auto; display: block; border-radius: 8px; }
-    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 16px; text-align: left; }
+    img { width: 100%; max-width: 640px; height: auto; display: block; border-radius: 8px; transition: transform 0.2s ease; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 14px; }
+    button, select { background: #0284c7; color: white; border: none; padding: 8px 14px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: background 0.2s; font-size: 13px; }
+    button:hover, select:hover { background: #0369a1; }
+    button.secondary { background: #475569; }
+    button.secondary:hover { background: #334155; }
+    button.active { background: #10b981; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-top: 16px; text-align: left; }
     .stat-card { background: #0f172a; padding: 10px 14px; border-radius: 8px; border: 1px solid #334155; }
     .stat-label { font-size: 11px; text-transform: uppercase; color: #94a3b8; font-weight: 700; letter-spacing: 0.5px; }
     .stat-val { font-size: 14px; font-weight: 600; color: #38bdf8; margin-top: 2px; }
-    .actions { display: flex; gap: 10px; justify-content: center; margin-top: 16px; }
-    button { background: #0284c7; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: background 0.2s; font-size: 14px; }
-    button:hover { background: #0369a1; }
-    button.secondary { background: #475569; }
-    button.secondary:hover { background: #334155; }
+    .tip { font-size: 12px; color: #94a3b8; margin-top: 12px; }
   </style>
 </head>
 <body>
   <h1>SortSense OV5640 Camera Feed</h1>
-  <div class="badge" id="sensorBadge">ESP32-S3 OV5640 Clean YUV422 v5</div>
+  <div class="badge" id="sensorBadge">ESP32-S3 OV5640 Optimized Stream</div>
 
   <div class="container">
     <div class="feed-wrapper">
       <img id="liveFeed" src="/capture" alt="Live Stream Loading..." />
     </div>
 
+    <!-- Quick Controls for Orientation & Performance -->
+    <div class="toolbar">
+      <button id="btnVflip" onclick="toggleControl('vflip')">↕ Flip V: ON</button>
+      <button id="btnHmirror" onclick="toggleControl('hmirror')">↔ Mirror H: OFF</button>
+      <select id="selRes" onchange="changeResolution(this.value)">
+        <option value="9" selected>VGA (640x480) - High Res</option>
+        <option value="7">HVGA (480x320) - Balanced</option>
+        <option value="5">QVGA (320x240) - Smooth 15+ FPS</option>
+      </select>
+      <button class="secondary" id="btnStream" onclick="toggleStream()">Pause Feed</button>
+      <button onclick="snapshot()">Snapshot</button>
+    </div>
+
     <div class="stats">
       <div class="stat-card">
         <div class="stat-label">Camera Status</div>
-        <div class="stat-val" id="statStatus" style="color: #4ade80;">ONLINE (Live)</div>
+        <div class="stat-val" id="statStatus" style="color: #4ade80;">ONLINE</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Resolution</div>
-        <div class="stat-val">VGA (640x480)</div>
+        <div class="stat-label">Frame Rate</div>
+        <div class="stat-val" id="statFps" style="color: #4ade80;">--</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Frames Streamed</div>
         <div class="stat-val" id="statFrames">0</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Frame Rate</div>
-        <div class="stat-val" id="statFps">--</div>
+        <div class="stat-label">Resolution</div>
+        <div class="stat-val" id="statRes">VGA (640x480)</div>
       </div>
     </div>
 
-    <div class="actions">
-      <button onclick="snapshot()">Snapshot</button>
-      <button class="secondary" id="btnStream" onclick="toggleStream()">Pause Feed</button>
-    </div>
+    <div class="tip">Tip: Switch to <b>QVGA</b> for ultra-fast, low-latency live video streaming (~15-20 FPS).</div>
   </div>
 
   <script>
@@ -114,6 +132,32 @@ static const char INDEX_HTML[] PROGMEM = R"rawliteral(
     let frames = 0;
     let streaming = true;
     let inFlight = false;
+    let vflip = 1;
+    let hmirror = 0;
+
+    function applyTransforms() {
+      img.style.transform = `scale(${hmirror ? -1 : 1}, ${vflip ? -1 : 1})`;
+    }
+
+    function toggleControl(variable) {
+      if (variable === 'vflip') {
+        vflip = vflip ? 0 : 1;
+        document.getElementById('btnVflip').innerText = '↕ Flip V: ' + (vflip ? 'ON' : 'OFF');
+        fetch('/control?var=vflip&val=' + vflip).catch(console.error);
+      } else if (variable === 'hmirror') {
+        hmirror = hmirror ? 0 : 1;
+        document.getElementById('btnHmirror').innerText = '↔ Mirror H: ' + (hmirror ? 'ON' : 'OFF');
+        fetch('/control?var=hmirror&val=' + hmirror).catch(console.error);
+      }
+    }
+
+    function changeResolution(val) {
+      const resMap = { '5': 'QVGA (320x240)', '7': 'HVGA (480x320)', '9': 'VGA (640x480)' };
+      document.getElementById('statRes').innerText = resMap[val] || 'Custom';
+      fetch('/control?var=framesize&val=' + val)
+        .then(() => { inFlight = false; })
+        .catch(console.error);
+    }
 
     function loadNextFrame() {
       if (!streaming || inFlight) return;
@@ -132,12 +176,13 @@ static const char INDEX_HTML[] PROGMEM = R"rawliteral(
         document.getElementById('statFps').innerText = fps.toFixed(1) + ' fps';
 
         inFlight = false;
-        setTimeout(loadNextFrame, 30);
+        // Zero delay between frames for maximum possible frame rate
+        setTimeout(loadNextFrame, 0);
       };
 
       nextImg.onerror = function() {
         inFlight = false;
-        setTimeout(loadNextFrame, 200);
+        setTimeout(loadNextFrame, 150);
       };
 
       nextImg.src = '/capture?t=' + Date.now();
@@ -177,7 +222,7 @@ void setupServerRoutes(void) {
   });
 
   // -------------------------------------------------------------------------
-  // Route 2: GET /capture - Acquire and stream JPEG snapshot via YUV422->JPEG
+  // Route 2: GET /capture - High-Performance Snapshot Streaming
   // -------------------------------------------------------------------------
   server.on("/capture", HTTP_GET, [](AsyncWebServerRequest *request) {
     if (cameraMutex == nullptr) {
@@ -185,21 +230,20 @@ void setupServerRoutes(void) {
       return;
     }
 
-    // Attempt mutex acquisition with bounded timeout
+    // Bounded mutex acquisition
     if (xSemaphoreTake(cameraMutex, CAMERA_MUTEX_TIMEOUT) != pdTRUE) {
       request->send(503, "text/plain",
                     "Camera busy - lock acquisition timeout\n");
       return;
     }
 
-    // Verify camera operational state
     if (!is_camera_initialized()) {
       xSemaphoreGive(cameraMutex);
       request->send(500, "text/plain", "Camera hardware not initialized\n");
       return;
     }
 
-    // Acquire frame buffer from hardware driver (YUV422 in PSRAM)
+    // 1. Acquire raw DMA frame buffer from camera driver
     camera_fb_t *fb = camera_acquire_frame();
     if (fb == nullptr) {
       xSemaphoreGive(cameraMutex);
@@ -209,24 +253,28 @@ void setupServerRoutes(void) {
 
     g_frameCount++;
 
-    // Convert YUV422 DMA buffer to compressed JPEG
+    // 2. Perform fast JPEG compression
     uint8_t *jpg_buf = nullptr;
     size_t jpg_len = 0;
-    bool ok = frame2jpg(fb, 70, &jpg_buf, &jpg_len);
-    camera_release_frame(fb); // Release DMA buffer back to driver immediately
+    bool ok = frame2jpg(fb, g_jpegQuality, &jpg_buf, &jpg_len);
+
+    // 3. CRITICAL PERFORMANCE OPTIMIZATION: Return hardware DMA buffer and
+    // release cameraMutex IMMEDIATELY after compression.
+    // DO NOT hold cameraMutex during TCP network transmission!
+    camera_release_frame(fb);
+    xSemaphoreGive(cameraMutex);
 
     if (!ok || jpg_buf == nullptr) {
-      xSemaphoreGive(cameraMutex);
       request->send(500, "text/plain", "JPEG compression failed\n");
       return;
     }
 
-    // Wrap dynamically allocated JPEG buffer in RAII streaming response
+    // 4. Wrap independent heap buffer in AsyncJpegResponse (frees buffer on
+    // finish)
     AsyncJpegResponse *response =
-        new (std::nothrow) AsyncJpegResponse(jpg_buf, jpg_len, cameraMutex);
+        new (std::nothrow) AsyncJpegResponse(jpg_buf, jpg_len);
     if (response == nullptr) {
       free(jpg_buf);
-      xSemaphoreGive(cameraMutex);
       request->send(500, "text/plain", "Failed to allocate HTTP response\n");
       return;
     }
@@ -237,26 +285,69 @@ void setupServerRoutes(void) {
   });
 
   // -------------------------------------------------------------------------
-  // Route 3: GET /status - Return JSON system telemetry and heap diagnostics
+  // Route 3: GET /control - Dynamic Sensor & Orientation Tuning
+  // -------------------------------------------------------------------------
+  server.on("/control", HTTP_GET, [](AsyncWebServerRequest *request) {
+    sensor_t *s = esp_camera_sensor_get();
+    if (!s) {
+      request->send(500, "text/plain", "Camera sensor uninitialized\n");
+      return;
+    }
+
+    if (request->hasParam("var") && request->hasParam("val")) {
+      String var = request->getParam("var")->value();
+      int val = request->getParam("val")->value().toInt();
+
+      if (var == "vflip") {
+        g_vflip = val;
+        if (s->set_vflip != nullptr) {
+          s->set_vflip(s, val);
+        }
+      } else if (var == "hmirror") {
+        g_hmirror = val;
+        if (s->set_hmirror != nullptr) {
+          s->set_hmirror(s, val);
+        }
+      } else if (var == "framesize") {
+        if (cameraMutex != nullptr &&
+            xSemaphoreTake(cameraMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+          g_frameSize = static_cast<framesize_t>(val);
+          if (s->set_framesize != nullptr) {
+            s->set_framesize(s, g_frameSize);
+          }
+          xSemaphoreGive(cameraMutex);
+        }
+      } else if (var == "quality") {
+        g_jpegQuality = constrain(val, 10, 95);
+      }
+      request->send(200, "text/plain", "OK");
+    } else {
+      request->send(400, "text/plain", "Missing parameter 'var' or 'val'");
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Route 4: GET /status - Return JSON system telemetry and heap diagnostics
   // -------------------------------------------------------------------------
   server.on("/status", HTTP_GET, [](AsyncWebServerRequest *request) {
-    char statusJson[256];
-    snprintf(statusJson, sizeof(statusJson),
-             "{\"status\":\"ok\",\"ip\":\"%s\",\"wifi_connected\":%s,\"camera_"
-             "initialized\":%s,\"frame_count\":%u,\"free_heap\":%u,\"free_"
-             "psram\":%u,\"uptime_ms\":%lu}",
-             (WiFi.status() == WL_CONNECTED) ? WiFi.localIP().toString().c_str()
-                                             : "0.0.0.0",
-             (WiFi.status() == WL_CONNECTED) ? "true" : "false",
-             is_camera_initialized() ? "true" : "false", g_frameCount,
-             static_cast<uint32_t>(ESP.getFreeHeap()),
-             static_cast<uint32_t>(ESP.getFreePsram()),
-             static_cast<unsigned long>(millis()));
+    char statusJson[300];
+    snprintf(
+        statusJson, sizeof(statusJson),
+        "{\"status\":\"ok\",\"ip\":\"%s\",\"wifi_connected\":%s,\"camera_"
+        "initialized\":%s,\"frame_count\":%u,\"vflip\":%d,\"hmirror\":%d,"
+        "\"quality\":%u,\"free_heap\":%u,\"free_psram\":%u,\"uptime_ms\":%lu}",
+        (WiFi.status() == WL_CONNECTED) ? WiFi.localIP().toString().c_str()
+                                        : "0.0.0.0",
+        (WiFi.status() == WL_CONNECTED) ? "true" : "false",
+        is_camera_initialized() ? "true" : "false", g_frameCount, g_vflip,
+        g_hmirror, g_jpegQuality, static_cast<uint32_t>(ESP.getFreeHeap()),
+        static_cast<uint32_t>(ESP.getFreePsram()),
+        static_cast<unsigned long>(millis()));
     request->send(200, "application/json", statusJson);
   });
 
   // -------------------------------------------------------------------------
-  // Route 4: 404 Handler - Unmatched routes
+  // Route 5: 404 Handler - Unmatched routes
   // -------------------------------------------------------------------------
   server.onNotFound([](AsyncWebServerRequest *request) {
     request->send(404, "text/plain", "404: Not Found\n");
@@ -351,6 +442,14 @@ void setup(void) {
                   camErr);
   } else {
     Serial.println("[Init] OV5640 Camera initialized successfully.");
+    // Set hardware orientation defaults
+    sensor_t *s = esp_camera_sensor_get();
+    if (s != nullptr) {
+      if (s->set_vflip != nullptr)
+        s->set_vflip(s, g_vflip);
+      if (s->set_hmirror != nullptr)
+        s->set_hmirror(s, g_hmirror);
+    }
   }
 
   // 3. Configure HTTP routes on AsyncWebServer instance
@@ -408,6 +507,7 @@ void loop(void) {
           size_t jpg_len = 0;
           bool ok = frame2jpg(fb, 75, &jpg_buf, &jpg_len);
           camera_release_frame(fb);
+          xSemaphoreGive(cameraMutex); // Release lock immediately
 
           if (ok && jpg_buf != nullptr) {
             Serial.println("---BEGIN_PHOTO---");
@@ -432,9 +532,9 @@ void loop(void) {
             Serial.println("[ERROR] frame2jpg failed!");
           }
         } else {
+          xSemaphoreGive(cameraMutex);
           Serial.println("[ERROR] camera_acquire_frame failed!");
         }
-        xSemaphoreGive(cameraMutex);
       } else {
         Serial.println("[ERROR] Camera mutex busy!");
       }

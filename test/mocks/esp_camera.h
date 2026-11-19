@@ -67,8 +67,11 @@ typedef struct {
   uint8_t VER;
 } sensor_id_t;
 
-typedef struct {
+typedef struct sensor {
   sensor_id_t id;
+  int (*set_vflip)(struct sensor *sensor, int enable);
+  int (*set_hmirror)(struct sensor *sensor, int enable);
+  int (*set_framesize)(struct sensor *sensor, framesize_t size);
 } sensor_t;
 
 typedef struct {
@@ -102,10 +105,24 @@ typedef struct {
 } camera_config_t;
 
 // --- Mock Control & Inspection State ---
+inline int mock_sensor_dummy_fn(sensor_t *s, int val) {
+  (void)s;
+  (void)val;
+  return 0;
+}
+inline int mock_sensor_dummy_framesize(sensor_t *s, framesize_t size) {
+  (void)s;
+  (void)size;
+  return 0;
+}
+
 inline camera_config_t mock_captured_config = {};
 inline esp_err_t mock_camera_init_result = ESP_OK;
 inline esp_err_t mock_camera_deinit_result = ESP_OK;
-inline sensor_t mock_sensor = {{0x56, 0x40, 0x5640, 0x01}};
+inline sensor_t mock_sensor = {{0x56, 0x40, 0x5640, 0x01},
+                               mock_sensor_dummy_fn,
+                               mock_sensor_dummy_fn,
+                               mock_sensor_dummy_framesize};
 inline sensor_t *mock_sensor_ptr = &mock_sensor;
 inline camera_fb_t *mock_fb_ptr = nullptr;
 inline camera_fb_t *mock_returned_fb_ptr = nullptr;
@@ -119,7 +136,10 @@ inline void mock_camera_reset() {
   memset(&mock_captured_config, 0, sizeof(mock_captured_config));
   mock_camera_init_result = ESP_OK;
   mock_camera_deinit_result = ESP_OK;
-  mock_sensor = {{0x56, 0x40, 0x5640, 0x01}};
+  mock_sensor = {{0x56, 0x40, 0x5640, 0x01},
+                 mock_sensor_dummy_fn,
+                 mock_sensor_dummy_fn,
+                 mock_sensor_dummy_framesize};
   mock_sensor_ptr = &mock_sensor;
   mock_fb_ptr = nullptr;
   mock_returned_fb_ptr = nullptr;
