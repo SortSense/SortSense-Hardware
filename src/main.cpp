@@ -27,6 +27,7 @@
 #include "config.h"
 #include "ir_handler.h"
 #include "network_handler.h"
+#include "tof_handler.h"
 
 // =============================================================================
 // FREERTOS CONFIGURATION & SYSTEM CONSTANTS
@@ -255,13 +256,18 @@ void setupServerRoutes(void) {
   // Route 3: GET /status - Return JSON system telemetry and heap diagnostics
   // -------------------------------------------------------------------------
   server.on("/status", HTTP_GET, [](AsyncWebServerRequest *request) {
-    char statusJson[280];
+    uint8_t fillLevels[TOF_SENSOR_COUNT] = {0};
+    tof_read_all_fill_levels(fillLevels);
+
+    char statusJson[420];
     snprintf(
         statusJson, sizeof(statusJson),
         "{\"status\":\"ok\",\"ip\":\"%s\",\"wifi_connected\":%s,\"ws_"
         "connected\":%s,"
         "\"camera_initialized\":%s,\"frame_count\":%u,\"free_heap\":%u,\"free_"
-        "psram\":%u,\"uptime_ms\":%lu}",
+        "psram\":%u,\"uptime_ms\":%lu,"
+        "\"fill_levels\":{\"plastic\":%u,\"paper\":%u,\"metal\":%u,\"general\":"
+        "%u}}",
         (WiFi.status() == WL_CONNECTED) ? WiFi.localIP().toString().c_str()
                                         : "0.0.0.0",
         (WiFi.status() == WL_CONNECTED) ? "true" : "false",
@@ -269,7 +275,9 @@ void setupServerRoutes(void) {
         is_camera_initialized() ? "true" : "false", g_frameCount,
         static_cast<uint32_t>(ESP.getFreeHeap()),
         static_cast<uint32_t>(ESP.getFreePsram()),
-        static_cast<unsigned long>(millis()));
+        static_cast<unsigned long>(millis()), fillLevels[BIN_INDEX_PLASTIC],
+        fillLevels[BIN_INDEX_PAPER], fillLevels[BIN_INDEX_METAL],
+        fillLevels[BIN_INDEX_GENERAL]);
     request->send(200, "application/json", statusJson);
   });
 
@@ -409,7 +417,11 @@ void setup(void) {
   // 6. Initialize LM393 IR break-beam sensor interrupt subsystem (Phase 3B)
   ir_init();
 
-  // 7. Pin FreeRTOS tasks to specific processor cores
+  // 7. Initialize 4x VL53L0X Time-of-Flight distance sensor subsystem (Phase
+  // 3C)
+  tof_init();
+
+  // 8. Pin FreeRTOS tasks to specific processor cores
   BaseType_t netTaskStatus = xTaskCreatePinnedToCore(
       networkTask, "NetworkTask", TASK_STACK_NETWORK, nullptr,
       TASK_PRIORITY_NETWORK, &networkTaskHandle, CORE_0_NETWORK);
@@ -425,8 +437,8 @@ void setup(void) {
   }
 
   Serial.println("=== SortSense Initialization Complete ===");
-  Serial.printf("[SYSTEM] Send 'c' or 's' over Serial at %u baud to capture "
-                "snapshot anytime.\n",
+  Serial.printf("[SYSTEM] Send 'c'/'s' = capture snapshot, 't' = check ToF "
+                "fill levels (baud %u).\n",
                 SERIAL_BAUD_RATE);
 }
 
@@ -475,8 +487,17 @@ void loop(void) {
     ir_send_verify_drop(droppedBin);
   }
 
-  // 3. High-speed Serial photo grab listener (compatible with
-  // tools/grab_test.py)
+  // 3. Periodic VL53L0X Time-of-Flight fill-level telemetry (Phase 3C)
+  static unsigned long lastTofReportTime = 0;
+  if (currentMillis - lastTofReportTime >= TOF_REPORT_INTERVAL_MS) {
+    lastTofReportTime = currentMillis;
+    uint8_t fillLevels[TOF_SENSOR_COUNT] = {0};
+    if (tof_read_all_fill_levels(fillLevels)) {
+      tof_send_telemetry(fillLevels);
+    }
+  }
+
+  // 4. High-speed Serial photo grab & sensor debug listener
   if (Serial.available()) {
     char c = Serial.read();
     if (c == 'c' || c == 's') {
@@ -518,6 +539,30 @@ void loop(void) {
       } else {
         Serial.println("[ERROR] Camera mutex busy!");
       }
+    } else if (c == 't' || c == 'T') {
+      Serial.println("\n[ToF] === Live Compartment Fill Levels ===");
+      for (uint8_t i = 0; i < TOF_SENSOR_COUNT; ++i) {
+        const char *name = (i == BIN_INDEX_PLASTIC)   ? BIN_NAME_PLASTIC
+                           : (i == BIN_INDEX_PAPER)   ? BIN_NAME_PAPER
+                           : (i == BIN_INDEX_METAL)   ? BIN_NAME_METAL
+                           : (i == BIN_INDEX_GENERAL) ? BIN_NAME_GENERAL
+                                                      : "unknown";
+        if (tof_is_sensor_active(i)) {
+          uint16_t dist = tof_read_distance_mm(i);
+          uint8_t fill = tof_calculate_fill_percentage(dist);
+          char bar[11] = "----------";
+          int filled = (fill + 5) / 10;
+          if (filled > 10)
+            filled = 10;
+          for (int b = 0; b < filled; ++b)
+            bar[b] = '#';
+          Serial.printf("  [%u] %-7s : %4u mm -> %3u%% [%s]\n", i, name, dist,
+                        fill, bar);
+        } else {
+          Serial.printf("  [%u] %-7s : (offline / not detected)\n", i, name);
+        }
+      }
+      Serial.println("==========================================");
     }
   }
 
