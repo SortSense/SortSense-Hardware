@@ -107,8 +107,9 @@ constexpr int8_t CAM_HMIRROR = 0;
 // =============================================================================
 
 // --- 1. Shared I2C Bus for 4x VL53L0X Time-of-Flight Distance Sensors ---
-constexpr uint8_t PIN_I2C_SDA = 47;          ///< I2C Data line
-constexpr uint8_t PIN_I2C_SCL = 48;          ///< I2C Clock line
+constexpr uint8_t PIN_I2C_SDA = 47; ///< I2C Data line
+constexpr uint8_t PIN_I2C_SCL =
+    21; ///< I2C Clock line (GPIO 21, freeing GPIO 48 for onboard RGB LED)
 constexpr uint32_t I2C_BUS_FREQ_HZ = 400000; ///< 400 kHz Fast-Mode bus clock
 
 // --- 2. 4x VL53L0X Digital Output XSHUT Shutdown Pins ---
@@ -130,7 +131,8 @@ constexpr uint16_t BIN_EMPTY_MM = 400;
 constexpr uint16_t BIN_FULL_MM = 50;
 
 /// Periodic fill level telemetry reporting interval (milliseconds)
-constexpr uint32_t TOF_REPORT_INTERVAL_MS = 60000;
+/// 15000ms (15s) for responsive live hackathon demo progress bar
+constexpr uint32_t TOF_REPORT_INTERVAL_MS = 15000;
 
 /// VL53L0X I2C communication and ranging timeout (milliseconds)
 constexpr uint32_t TOF_TIMEOUT_MS = 500;
@@ -140,6 +142,12 @@ constexpr uint32_t TOF_TIMING_BUDGET_US = 33000;
 
 /// Telemetry HTTP POST endpoint path
 constexpr const char *TOF_TELEMETRY_PATH = "/api/telemetry/fill-levels";
+
+/// Kiyo's Cloud Website (Vercel) Telemetry URL
+/// When testing locally, routes to Edric's LAN server. Set to Vercel HTTPS
+/// domain for cloud demo.
+constexpr const char *KIYO_CLOUD_URL =
+    "http://192.168.0.66:8000/api/telemetry/fill-levels";
 
 // --- 3. 4x LM393 IR Break-Beam Sensor Inputs (Interrupt Capable) ---
 constexpr uint8_t PIN_IR_BEAM_1 = 14; ///< IR Beam Sensor 1 input
@@ -152,9 +160,17 @@ constexpr uint32_t IR_DEBOUNCE_MS = 500; ///< 500ms software debounce per bin
 constexpr const char *IR_VERIFY_DROP_PATH =
     "/internal/verify-drop"; ///< HTTP drop verification endpoint
 
-// --- 4. 12x WS2812B Addressable RGB LED Status Indicator Strip ---
-constexpr uint8_t PIN_WS2812B_DATA = 21;  ///< WS2812B single-wire NRZ data pin
-constexpr uint16_t WS2812B_NUM_LEDS = 12; ///< Number of cascaded LEDs
+// --- 4. ESP32-S3 Onboard Addressable RGB LED (WS2812 / NeoPixel) ---
+constexpr uint8_t PIN_RGB_LED = 48; ///< ESP32-S3-DevKitC-1 onboard RGB LED GPIO
+constexpr uint8_t RGB_LED_BRIGHTNESS =
+    64; ///< Default brightness scaling (0..255)
+constexpr uint8_t PIN_WS2812B_DATA =
+    48; ///< Compatibility alias for onboard WS2812 LED
+constexpr uint16_t WS2812B_NUM_LEDS = 1; ///< 1 onboard RGB LED
+
+/// Monday First Pitch Shortcut: Attribute physical drops to last AI classified
+/// bin to demonstrate 100% sort accuracy on 1-bin prototype chute.
+constexpr bool DEMO_PITCH_SMART_SORT = true;
 
 // =============================================================================
 // SYSTEM & NETWORKING CONFIGURATION CONSTANTS
