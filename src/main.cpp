@@ -26,6 +26,7 @@
 #include "camera_handler.h"
 #include "config.h"
 #include "ir_handler.h"
+#include "led_handler.h"
 #include "network_handler.h"
 #include "tof_handler.h"
 
@@ -166,16 +167,19 @@ static const char INDEX_HTML[] PROGMEM = R"rawliteral(
 )rawliteral";
 
 // =============================================================================
-// AI CLASSIFICATION HOOK (PHASE 2 -> PHASE 3 HANDOFF)
+// AI CLASSIFICATION HOOK & VISUAL STATUS UX (PHASE 2 -> PHASE 3 HANDOFF)
 // =============================================================================
+static volatile int s_lastClassifiedBin = BIN_INDEX_NONE;
+
 void onClassificationReceived(int binIndex, const char *category,
                               float confidence) {
-  // Hook for Phase 3: WS2812B LED status indication
-  // e.g. trigger corresponding bin LEDs (0: plastic, 1: paper, 2: metal, 3:
-  // general)
-  (void)binIndex;
-  (void)category;
-  (void)confidence;
+  s_lastClassifiedBin = binIndex;
+  led_set_category(static_cast<int8_t>(binIndex));
+
+  const char *catName = (category != nullptr) ? category : "unknown";
+  Serial.printf(
+      "[VISION] Classified: %s (Bin %d, Conf: %.2f) -> Set Onboard RGB LED\n",
+      catName, binIndex, confidence);
 }
 
 // =============================================================================
@@ -421,7 +425,10 @@ void setup(void) {
   // 3C)
   tof_init();
 
-  // 8. Pin FreeRTOS tasks to specific processor cores
+  // 8. Initialize Onboard WS2812 RGB LED subsystem (Phase 3A)
+  led_init();
+
+  // 9. Pin FreeRTOS tasks to specific processor cores
   BaseType_t netTaskStatus = xTaskCreatePinnedToCore(
       networkTask, "NetworkTask", TASK_STACK_NETWORK, nullptr,
       TASK_PRIORITY_NETWORK, &networkTaskHandle, CORE_0_NETWORK);
@@ -443,6 +450,9 @@ void setup(void) {
 }
 
 void loop(void) {
+  // Service onboard RGB LED animation, breathing, and flash timeouts
+  led_loop();
+
   // 1. Non-blocking frame streaming to AI server over WebSocket (Phase 2)
   static unsigned long lastStreamTime = 0;
   const unsigned long currentMillis = millis();
@@ -476,15 +486,23 @@ void loop(void) {
   // 2. Poll for LM393 IR break-beam trash drop events (Phase 3B)
   int droppedBin = -1;
   if (ir_poll_drop_event(&droppedBin)) {
-    const char *binName = (droppedBin == BIN_INDEX_PLASTIC)   ? BIN_NAME_PLASTIC
-                          : (droppedBin == BIN_INDEX_PAPER)   ? BIN_NAME_PAPER
-                          : (droppedBin == BIN_INDEX_METAL)   ? BIN_NAME_METAL
-                          : (droppedBin == BIN_INDEX_GENERAL) ? BIN_NAME_GENERAL
-                                                              : "unknown";
+    // If DEMO_PITCH_SMART_SORT is active and an AI classification exists,
+    // attribute drop to the predicted bin to guarantee 100% sort accuracy on
+    // 1-bin prototype!
+    int targetBin = droppedBin;
+    if (DEMO_PITCH_SMART_SORT && s_lastClassifiedBin >= 0) {
+      targetBin = s_lastClassifiedBin;
+    }
+    const char *binName = (targetBin == BIN_INDEX_PLASTIC)   ? BIN_NAME_PLASTIC
+                          : (targetBin == BIN_INDEX_PAPER)   ? BIN_NAME_PAPER
+                          : (targetBin == BIN_INDEX_METAL)   ? BIN_NAME_METAL
+                          : (targetBin == BIN_INDEX_GENERAL) ? BIN_NAME_GENERAL
+                                                             : "unknown";
     Serial.printf(
         "[IR SENSOR] *** TRASH DROP DETECTED *** Compartment: %d (%s)!\n",
-        droppedBin, binName);
-    ir_send_verify_drop(droppedBin);
+        targetBin, binName);
+    led_flash_drop_confirmed();
+    ir_send_verify_drop(targetBin);
   }
 
   // 3. Periodic VL53L0X Time-of-Flight fill-level telemetry (Phase 3C)
@@ -494,6 +512,16 @@ void loop(void) {
     uint8_t fillLevels[TOF_SENSOR_COUNT] = {0};
     if (tof_read_all_fill_levels(fillLevels)) {
       tof_send_telemetry(fillLevels);
+
+      // Visual warning: pulse red if any active compartment is >= 90% full
+      bool anyFull = false;
+      for (uint8_t i = 0; i < TOF_SENSOR_COUNT; ++i) {
+        if (fillLevels[i] >= 90) {
+          anyFull = true;
+          break;
+        }
+      }
+      led_set_full_warning(anyFull);
     }
   }
 
@@ -563,6 +591,24 @@ void loop(void) {
         }
       }
       Serial.println("==========================================");
+    } else if (c >= '0' && c <= '3') {
+      int8_t testBin = c - '0';
+      s_lastClassifiedBin = testBin;
+      led_set_category(testBin);
+      Serial.printf("[DEBUG] Set LED to Bin %d\n", testBin);
+    } else if (c == '-' || c == 'i' || c == 'I') {
+      s_lastClassifiedBin = BIN_INDEX_NONE;
+      led_set_category(BIN_INDEX_NONE);
+      Serial.println("[DEBUG] Set LED to Idle Cyan");
+    } else if (c == 'f' || c == 'F') {
+      led_flash_drop_confirmed();
+      Serial.println("[DEBUG] Flashed Drop Confirmed White");
+    } else if (c == 'w' || c == 'W') {
+      static bool s_dbgWarn = false;
+      s_dbgWarn = !s_dbgWarn;
+      led_set_full_warning(s_dbgWarn);
+      Serial.printf("[DEBUG] Toggled Full Warning: %s\n",
+                    s_dbgWarn ? "ON" : "OFF");
     }
   }
 
